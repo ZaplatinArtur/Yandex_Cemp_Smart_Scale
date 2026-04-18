@@ -64,13 +64,11 @@ class Detector:
 		for i, r in enumerate(results, 1):
 			meta = r.get("metadata", {}) or {}
 			cat = meta.get("category", "")
-			pid = meta.get("product_id", "")
-			name = r.get("name") or cat or pid or r.get("id")
-			pid_str = f" product_id:{pid}" if pid else ""
+			name = r.get("name") or cat or r.get("id")
 			db_idx = r.get("db_index")
 			idx_str = f" index:{db_idx}" if db_idx is not None else ""
 			meta_str = json.dumps(meta, ensure_ascii=False, default=_json_default)
-			print(f"  {i}. [{r['score']:.3f}] {name} — {r.get('id')}{pid_str}{idx_str}")
+			print(f"  {i}. [{r['score']:.3f}] {name} — {r.get('id')}{idx_str}")
 			print(f"     metadata: {meta_str}")
 		return results
 

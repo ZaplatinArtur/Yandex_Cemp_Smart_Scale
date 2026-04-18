@@ -536,17 +536,15 @@ class FruitSearchEngine:
             img1.jpg
             img2.jpg
         """
+        # Начало: подготовка
         print(f"\nПостроение базы из: {images_dir}")
         start_time = time.time()
 
-        # Попытка загрузить соответствие filename -> product_id из CSV.
-        filename_to_pid = {}
-        category_to_pid = {}
-        csv_path = None
-        if products_csv:
-            csv_path = products_csv
-        else:
-            # accept both 'products.csv' and 'product.csv' (case-sensitive filename)
+        # Попытка загрузить соответствие filename -> price из CSV.
+        filename_to_price: Dict[str, float] = {}
+        category_to_price: Dict[str, float] = {}
+        csv_path = products_csv if products_csv else None
+        if csv_path is None:
             candidates = [os.path.join(images_dir, "products.csv"), os.path.join(images_dir, "product.csv")]
             for c in candidates:
                 if os.path.exists(c):
@@ -555,82 +553,89 @@ class FruitSearchEngine:
 
         if csv_path:
             try:
+                def _try_parse_price(val):
+                    if val is None:
+                        return None
+                    s = str(val).strip()
+                    if s == "":
+                        return None
+                    for token in ['$', '€', '₽', 'руб', 'RUB', 'rub', 'р.', 'руб.']:
+                        s = s.replace(token, '')
+                    s = s.replace(',', '.')
+                    s = s.strip()
+                    try:
+                        return float(s)
+                    except Exception:
+                        return s
+
                 with open(csv_path, newline='', encoding='utf-8') as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        pid = row.get("product_id") or row.get("product") or row.get("productId")
                         fname = row.get("filename") or row.get("id") or row.get("image")
                         category = row.get("category")
-                        if fname and pid:
-                            # normalize filename: strip quotes/spaces and index by both basename and original (lowercased)
+                        price_raw = row.get("price") or row.get("Price") or row.get("cost") or row.get("Цена")
+                        price = _try_parse_price(price_raw)
+
+                        if fname:
                             fname_norm = str(fname).strip().strip('"').strip("'")
                             bname = Path(fname_norm).name
-                            filename_to_pid[bname.lower()] = pid
-                            filename_to_pid[fname_norm.lower()] = pid
-                        elif category and pid:
-                            category_to_pid[category.lower()] = pid
-                print(f"  Загружено отображение product_id из: {csv_path} ({len(filename_to_pid)} файлов, {len(category_to_pid)} категорий)")
+                            if price is not None:
+                                filename_to_price[bname.lower()] = price
+                                filename_to_price[fname_norm.lower()] = price
+                        elif category and price is not None:
+                            category_to_price[category.lower()] = price
+
+                print(f"  Загружено отображение price из: {csv_path} ({len(filename_to_price)} файлов, {len(category_to_price)} категорий)")
             except Exception as e:
                 print(f"  Warning: failed to parse products CSV {csv_path}: {e}")
 
-        image_paths = []
-        image_ids = []
-        image_metadata = []
+        # Сканируем изображения и формируем metadata (без product_id)
+        image_paths: List[str] = []
+        image_ids: List[str] = []
+        image_metadata: List[Dict] = []
 
         root = Path(images_dir)
-
         if not root.exists() or not root.is_dir():
             print(f"  Путь не найден или не директория: {images_dir}")
             return
 
-        # Проверяем: вложенные папки (категории) или плоская структура
         subdirs = [d for d in root.iterdir() if d.is_dir()]
 
         if subdirs:
-            # Структура с категориями
             for category_dir in sorted(subdirs):
                 category = category_dir.name
                 for img_path in sorted(category_dir.iterdir()):
                     if img_path.suffix.lower() in self.SUPPORTED_EXTENSIONS:
                         image_paths.append(str(img_path))
                         image_ids.append(f"{category}/{img_path.name}")
-                        # определяем product_id: сначала по filename->pid из CSV (с нормализацией),
-                        # затем по абсолютному пути из CSV, затем по категории, затем по префиксу filename (числа_)
+
                         bname = img_path.name
-                        pid = filename_to_pid.get(bname.lower()) or filename_to_pid.get(str(img_path).lower())
-                        if not pid:
-                            pid = category_to_pid.get(category.lower()) or category_to_pid.get(category)
-                        if not pid:
-                            # пример: "123_apple.jpg" -> product_id = "123"
-                            parts = img_path.name.split("_", 1)
-                            if parts and parts[0].isdigit():
-                                pid = parts[0]
+                        price = filename_to_price.get(bname.lower()) or filename_to_price.get(str(img_path).lower())
+                        if price is None:
+                            price = category_to_price.get(category.lower()) or category_to_price.get(category)
 
                         image_metadata.append({
                             "category": category,
                             "filename": img_path.name,
                             "path": str(img_path),
-                            "product_id": pid,
+                            "price": price,
                         })
         else:
-            # Плоская структура
             for img_path in sorted(root.iterdir()):
                 if img_path.suffix.lower() in self.SUPPORTED_EXTENSIONS:
                     image_paths.append(str(img_path))
                     image_ids.append(img_path.name)
+
                     bname = img_path.name
-                    pid = filename_to_pid.get(bname.lower()) or filename_to_pid.get(str(img_path).lower())
-                    if not pid:
-                        # попробовать извлечь из имени файла префикс
-                        parts = img_path.name.split("_", 1)
-                        if parts and parts[0].isdigit():
-                            pid = parts[0]
+                    price = filename_to_price.get(bname.lower()) or filename_to_price.get(str(img_path).lower())
+                    if price is None:
+                        price = category_to_price.get("unknown")
 
                     image_metadata.append({
                         "category": "unknown",
                         "filename": img_path.name,
                         "path": str(img_path),
-                        "product_id": pid,
+                        "price": price,
                     })
 
         if not image_paths:
@@ -639,7 +644,6 @@ class FruitSearchEngine:
 
         print(f"  Найдено изображений: {len(image_paths)}")
 
-        # Пакетное извлечение эмбеддингов
         processed = 0
         for i in range(0, len(image_paths), batch_size):
             batch_paths = image_paths[i:i + batch_size]
@@ -654,11 +658,9 @@ class FruitSearchEngine:
                 if processed % 200 == 0 or processed == len(image_paths):
                     elapsed = time.time() - start_time
                     speed = processed / elapsed
-                    print(f"  Обработано: {processed}/{len(image_paths)} "
-                          f"({speed:.0f} img/s)")
+                    print(f"  Обработано: {processed}/{len(image_paths)} ({speed:.0f} img/s)")
             except Exception as e:
                 print(f"  Ошибка в батче {i}: {e}")
-                # Обрабатываем по одному
                 for path, item_id, meta in zip(batch_paths, batch_ids, batch_meta):
                     try:
                         emb = self.model.get_embedding(path)
@@ -669,36 +671,44 @@ class FruitSearchEngine:
 
         elapsed = time.time() - start_time
         print(f"\n  Готово! {self.db.count()} элементов за {elapsed:.1f}с")
-
-    def search(self, query_image, top_k: int = 5) -> List[Dict]:
+    def search(self, query, top_k: int = 5) -> List[Dict]:
         """
-        Найти похожие изображения.
-        query_image: str (путь) | PIL.Image
-        Возвращает список результатов с полями:
-          - id, score, metadata (как раньше)
-          - db_index: индекс записи в `self.db.ids` (если доступно)
-          - name: категория или product_id или id (читаемое имя)
+        Поиск похожих изображений.
+        `query` может быть: путь к файлу (str), PIL.Image, numpy array или уже готовый вектор эмбеддинга.
+        Возвращает список результатов с полями: `id`, `score`, `metadata`, `db_index`, `name`.
         """
-        query_emb = self.model.get_embedding(query_image)
-        results = self.db.search(query_emb, top_k)
+        # Если query уже вектор
+        emb = None
+        if isinstance(query, (list, tuple, np.ndarray)):
+            emb = np.asarray(query, dtype=np.float32)
+            if emb.ndim == 2 and emb.shape[0] == 1:
+                emb = emb.flatten()
+        else:
+            emb = self.model.get_embedding(query)
 
-        # attach DB index and human-readable name when available
-        db_ids = getattr(self.db, "ids", None)
-        out = []
+        results = self.db.search(emb, top_k=top_k)
+
+        annotated = []
         for r in results:
-            item = dict(r)  # shallow copy
-            item_meta = item.get("metadata", {}) or {}
-            if db_ids and item.get("id") in db_ids:
-                try:
-                    item["db_index"] = db_ids.index(item.get("id"))
-                except ValueError:
-                    item["db_index"] = None
-            else:
-                item["db_index"] = None
-            item["name"] = item_meta.get("category") or item_meta.get("product_id") or item.get("id")
-            out.append(item)
-        return out
+            meta = r.get("metadata", {}) or {}
+            # попытка определить индекс в БД (если доступен)
+            db_idx = None
+            try:
+                db_idx = self.db.ids.index(r.get("id"))
+            except Exception:
+                db_idx = None
 
+            name = meta.get("filename") or meta.get("name") or r.get("id")
+
+            annotated.append({
+                "id": r.get("id"),
+                "score": r.get("score"),
+                "metadata": meta,
+                "db_index": db_idx,
+                "name": name,
+            })
+
+        return annotated
     def compare(self, image1, image2) -> Dict:
         """Сравнить два изображения."""
         score = self.model.compare(image1, image2)
@@ -959,22 +969,30 @@ def main():
     else:
         db_path = db_path_arg
 
-    print(f"Using DB file: {db_path}")
-    engine = FruitSearchEngine(args.model, db_path, db_backend=args.db_backend)
+    # If the user passed a directory (or a path that looks like a directory
+    # because it has no file extension), place the DB file `fruits.db` inside it.
+    db_candidate = db_path.rstrip(os.sep)
+    base = os.path.basename(db_candidate)
+    _, ext = os.path.splitext(base)
+    if os.path.isdir(db_path) or base == "" or ext == "":
+        db_file = os.path.join(db_candidate, "fruits.db")
+    else:
+        db_file = db_path
+
+    print(f"Using DB file: {db_file}")
+    engine = FruitSearchEngine(args.model, db_file, db_backend=args.db_backend)
 
     if args.build:
         engine.build_database(args.build)
-        engine.save_database(db_path)
+        engine.save_database(db_file)
 
     if args.search:
         results = engine.search(args.search, top_k=args.top)
         print(f"\nТоп-{args.top} похожих:")
         for i, r in enumerate(results, 1):
             cat = r["metadata"].get("category", "")
-            pid = r["metadata"].get("product_id", "")
-            pid_str = f" product_id:{pid}" if pid else ""
             meta_str = json.dumps(r["metadata"], ensure_ascii=False, default=_json_default)
-            print(f"  {i}. [{r['score']:.3f}] {cat} — {r['id']}{pid_str}")
+            print(f"  {i}. [{r['score']:.3f}] {cat} — {r['id']}")
             print(f"     metadata: {meta_str}")
 
     if args.compare:
@@ -987,10 +1005,8 @@ def main():
         print(f"\nЭто скорее всего:")
         for i, p in enumerate(predictions, 1):
             cat = p["metadata"].get("category", "?")
-            pid = p["metadata"].get("product_id", "")
-            pid_str = f" product_id:{pid}" if pid else ""
             meta_str = json.dumps(p["metadata"], ensure_ascii=False, default=_json_default)
-            print(f"  {i}. {cat} ({p['score']:.3f}){pid_str}")
+            print(f"  {i}. {cat} ({p['score']:.3f})")
             print(f"     metadata: {meta_str}")
 
     if args.stats:
