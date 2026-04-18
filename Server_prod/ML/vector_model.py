@@ -502,7 +502,7 @@ class FruitSearchEngine:
 
             try:
                 # Import FaissDB and ensure underlying faiss library is available
-                from db_adapters import FaissDB, faiss as _faiss
+                from utils.db_adapters import FaissDB, faiss as _faiss
             except Exception as e:
                 raise RuntimeError(f"FaissDB adapter not available: {e}") from e
 

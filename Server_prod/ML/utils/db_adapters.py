@@ -8,7 +8,7 @@ lazy/guarded so the module can be imported even if `faiss` or
 corresponding libraries or services are available.
 
 Usage examples:
-    from db_adapters import FaissDB
+    from utils.db_adapters import FaissDB
     db = FaissDB(dim=256)
     db.add('id1', emb_vector, {'category': 'apple'})
     results = db.search(query_vector, top_k=5)
