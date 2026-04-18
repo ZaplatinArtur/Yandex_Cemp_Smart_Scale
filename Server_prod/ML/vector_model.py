@@ -76,47 +76,43 @@ class FruitEmbedder(nn.Module):
 class EmbeddingModel:
     """Обёртка: загрузка модели + извлечение эмбеддингов."""
 
-    def __init__(self, checkpoint_path : str, device: str = "auto"):
+    def __init__(self, checkpoint_path : str, device: str = "auto", onnx_model_path: Optional[str] = None):
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
 
         print(f"Загрузка модели ({self.device})...")
-        if not os.path.exists(checkpoint_path):
-            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-        try:
-            checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        except Exception as e:
-            raise RuntimeError(f"Failed to load checkpoint '{checkpoint_path}': {e}")
+        # If user passed an ONNX file as --model, treat it as onnx_model_path
+        is_onnx_path = bool(checkpoint_path and os.path.isfile(checkpoint_path) and checkpoint_path.lower().endswith('.onnx'))
+        if is_onnx_path and not onnx_model_path:
+            onnx_model_path = checkpoint_path
 
+        checkpoint = {}
+
+        # Load checkpoint only when not using ONNX as the primary source
+        if not onnx_model_path:
+            if not os.path.exists(checkpoint_path):
+                raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+            # Try standard torch.load, fall back to weights_only=False when supported
+            try:
+                checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            except Exception as e:
+                try:
+                    # Some PyTorch versions changed default weights_only behavior
+                    checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+                except TypeError:
+                    raise RuntimeError(f"Failed to load checkpoint '{checkpoint_path}': {e}")
+                except Exception as e2:
+                    raise RuntimeError(f"Failed to load checkpoint '{checkpoint_path}': {e2}")
+
+        # Derive processor/backbone defaults from checkpoint (or use defaults)
         backbone_name = checkpoint.get("backbone_name", "facebook/dinov2-small")
         embedding_dim = checkpoint.get("embedding_dim", 256)
 
-        self.model = FruitEmbedder(
-            backbone_name=backbone_name,
-            embedding_dim=embedding_dim,
-        )
-        head_state = checkpoint.get("head_state_dict")
-        if head_state is None:
-            print("  Warning: 'head_state_dict' not found in checkpoint — using randomly initialized head.")
-        else:
-            try:
-                self.model.head.load_state_dict(head_state)
-            except Exception as e:
-                print(f"  Warning: strict load of head_state_dict failed: {e}. Trying non-strict load.")
-                self.model.head.load_state_dict(head_state, strict=False)
-
-        if checkpoint.get("backbone_state_dict"):
-            try:
-                self.model.backbone.load_state_dict(checkpoint["backbone_state_dict"])
-            except Exception as e:
-                print(f"  Warning: loading backbone_state_dict failed: {e} (ignoring)")
-
-        self.model.to(self.device)
-        self.model.eval()
-
+        # Image processor + simple preprocessing (same as before)
         self.processor = AutoImageProcessor.from_pretrained(backbone_name)
         self.preprocess = transforms.Compose([
             transforms.Resize(256),
@@ -126,7 +122,105 @@ class EmbeddingModel:
         self.classes = checkpoint.get("classes", [])
         self.embedding_dim = embedding_dim
 
-        print(f"  Модель загружена: dim={embedding_dim}, классов={len(self.classes)}")
+        # ONNX runtime support (optional). If provided, prefer ONNX for inference.
+        self.onnx_session = None
+        self.use_onnx = False
+        self.onnx_input_name = None
+        self.onnx_output_name = None
+
+        if onnx_model_path:
+            try:
+                import onnxruntime as ort
+                available = ort.get_available_providers()
+                providers = []
+                if self.device.type == 'cuda' and 'CUDAExecutionProvider' in available:
+                    providers.append('CUDAExecutionProvider')
+                if 'CPUExecutionProvider' in available:
+                    providers.append('CPUExecutionProvider')
+                providers = providers or None
+                self.onnx_session = ort.InferenceSession(onnx_model_path, providers=providers)
+                self.onnx_input_name = self.onnx_session.get_inputs()[0].name
+                self.onnx_output_name = self.onnx_session.get_outputs()[0].name
+
+                # Try a quick dummy inference to infer output dim if possible
+                try:
+                    dummy_img = Image.new('RGB', (224, 224))
+                    proc = self.processor(images=self.preprocess(dummy_img), return_tensors='np')
+                    dummy = proc['pixel_values'].astype(np.float32)
+                    if dummy.ndim == 3:
+                        dummy = np.expand_dims(dummy, 0)
+                    res = self.onnx_session.run(None, {self.onnx_input_name: dummy})
+                    if res and hasattr(res[0], 'shape'):
+                        out_shape = res[0].shape
+                        if len(out_shape) >= 2:
+                            self.embedding_dim = int(out_shape[1])
+                except Exception:
+                    pass
+
+                self.use_onnx = True
+                self.model = None
+                print(f"  ONNX model loaded: {onnx_model_path} (embedding_dim={self.embedding_dim})")
+            except Exception as e:
+                print(f"  Warning: failed to load ONNX model '{onnx_model_path}': {e}. Falling back to PyTorch model.")
+                self.onnx_session = None
+
+        if not self.use_onnx:
+            # Build PyTorch model as before
+            self.model = FruitEmbedder(
+                backbone_name=backbone_name,
+                embedding_dim=self.embedding_dim,
+            )
+
+            # Try various common checkpoint layouts
+            if isinstance(checkpoint, dict):
+                # Full model/state dict keys
+                if 'state_dict' in checkpoint:
+                    try:
+                        self.model.load_state_dict(checkpoint['state_dict'])
+                    except Exception:
+                        try:
+                            self.model.load_state_dict(checkpoint['state_dict'], strict=False)
+                        except Exception:
+                            pass
+
+                if 'model_state_dict' in checkpoint:
+                    try:
+                        self.model.load_state_dict(checkpoint['model_state_dict'])
+                    except Exception:
+                        try:
+                            self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+                        except Exception:
+                            pass
+
+                head_state = checkpoint.get('head_state_dict')
+                if head_state is not None:
+                    try:
+                        self.model.head.load_state_dict(head_state)
+                    except Exception:
+                        try:
+                            self.model.head.load_state_dict(head_state, strict=False)
+                        except Exception:
+                            pass
+
+                if 'backbone_state_dict' in checkpoint:
+                    try:
+                        self.model.backbone.load_state_dict(checkpoint['backbone_state_dict'])
+                    except Exception:
+                        pass
+
+                # Raw state_dict (fallback)
+                if any(isinstance(v, torch.Tensor) for v in checkpoint.values()):
+                    try:
+                        self.model.load_state_dict(checkpoint)
+                    except Exception:
+                        try:
+                            self.model.load_state_dict(checkpoint, strict=False)
+                        except Exception:
+                            pass
+
+            self.model.to(self.device)
+            self.model.eval()
+            print(f"  PyTorch model ready: dim={self.embedding_dim}, классов={len(self.classes)}")
 
     def get_embedding(self, image) -> np.ndarray:
         """
@@ -139,6 +233,29 @@ class EmbeddingModel:
             image = Image.fromarray(image).convert("RGB")
 
         image = self.preprocess(image)
+
+        # ONNX path
+        if self.use_onnx and self.onnx_session is not None:
+            inputs = self.processor(images=image, return_tensors="np")
+            pixel_values = inputs["pixel_values"].astype(np.float32)
+            if pixel_values.ndim == 3:
+                pixel_values = np.expand_dims(pixel_values, 0)
+            pixel_values = np.ascontiguousarray(pixel_values)
+            try:
+                ort_inputs = {self.onnx_input_name: pixel_values}
+                outputs = self.onnx_session.run(None, ort_inputs)
+                embedding = outputs[0]
+            except Exception as e:
+                raise RuntimeError(f"ONNX inference failed: {e}")
+
+            # ensure L2-normalized
+            if embedding.ndim == 2:
+                norms = np.linalg.norm(embedding, axis=1, keepdims=True)
+                norms[norms == 0] = 1.0
+                embedding = embedding / norms
+            return embedding.flatten()
+
+        # PyTorch path (fallback)
         inputs = self.processor(images=image, return_tensors="pt")
         pixel_values = inputs["pixel_values"].to(self.device)
 
@@ -151,6 +268,38 @@ class EmbeddingModel:
         """Пакетное извлечение эмбеддингов."""
         all_embeddings = []
 
+        # If ONNX available, run batches via ONNX Runtime
+        if self.use_onnx and self.onnx_session is not None:
+            for i in range(0, len(images), batch_size):
+                batch_images = images[i:i + batch_size]
+                processed = []
+                for img in batch_images:
+                    if isinstance(img, str):
+                        img = Image.open(img).convert("RGB")
+                    img = self.preprocess(img)
+                    inputs = self.processor(images=img, return_tensors="np")
+                    processed.append(inputs["pixel_values"].squeeze(0))
+
+                pixel_values = np.stack(processed).astype(np.float32)
+                pixel_values = np.ascontiguousarray(pixel_values)
+                try:
+                    outputs = self.onnx_session.run(None, {self.onnx_input_name: pixel_values})
+                    embeddings = outputs[0]
+                except Exception as e:
+                    raise RuntimeError(f"ONNX batch inference failed: {e}")
+
+                # normalize
+                norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+                norms[norms == 0] = 1.0
+                embeddings = embeddings / norms
+                all_embeddings.append(embeddings)
+
+            if not all_embeddings:
+                return np.empty((0, self.embedding_dim), dtype=np.float32)
+
+            return np.vstack(all_embeddings)
+
+        # PyTorch fallback
         for i in range(0, len(images), batch_size):
             batch_images = images[i:i + batch_size]
             processed = []
@@ -525,10 +674,30 @@ class FruitSearchEngine:
         """
         Найти похожие изображения.
         query_image: str (путь) | PIL.Image
+        Возвращает список результатов с полями:
+          - id, score, metadata (как раньше)
+          - db_index: индекс записи в `self.db.ids` (если доступно)
+          - name: категория или product_id или id (читаемое имя)
         """
         query_emb = self.model.get_embedding(query_image)
         results = self.db.search(query_emb, top_k)
-        return results
+
+        # attach DB index and human-readable name when available
+        db_ids = getattr(self.db, "ids", None)
+        out = []
+        for r in results:
+            item = dict(r)  # shallow copy
+            item_meta = item.get("metadata", {}) or {}
+            if db_ids and item.get("id") in db_ids:
+                try:
+                    item["db_index"] = db_ids.index(item.get("id"))
+                except ValueError:
+                    item["db_index"] = None
+            else:
+                item["db_index"] = None
+            item["name"] = item_meta.get("category") or item_meta.get("product_id") or item.get("id")
+            out.append(item)
+        return out
 
     def compare(self, image1, image2) -> Dict:
         """Сравнить два изображения."""

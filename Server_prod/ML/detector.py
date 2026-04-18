@@ -62,11 +62,15 @@ class Detector:
 
 		print(f"Top-{len(results)} results:")
 		for i, r in enumerate(results, 1):
-			cat = r["metadata"].get("category", "")
-			pid = r["metadata"].get("product_id", "")
+			meta = r.get("metadata", {}) or {}
+			cat = meta.get("category", "")
+			pid = meta.get("product_id", "")
+			name = r.get("name") or cat or pid or r.get("id")
 			pid_str = f" product_id:{pid}" if pid else ""
-			meta_str = json.dumps(r["metadata"], ensure_ascii=False, default=_json_default)
-			print(f"  {i}. [{r['score']:.3f}] {cat} — {r['id']}{pid_str}")
+			db_idx = r.get("db_index")
+			idx_str = f" index:{db_idx}" if db_idx is not None else ""
+			meta_str = json.dumps(meta, ensure_ascii=False, default=_json_default)
+			print(f"  {i}. [{r['score']:.3f}] {name} — {r.get('id')}{pid_str}{idx_str}")
 			print(f"     metadata: {meta_str}")
 		return results
 

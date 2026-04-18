@@ -3,3 +3,8 @@ torchvision
 opencv-python
 faiss-cpu
 faiss-gpu
+transformers 
+onnx 
+onnxruntime 
+onnx-simplifier
+onnxscript
