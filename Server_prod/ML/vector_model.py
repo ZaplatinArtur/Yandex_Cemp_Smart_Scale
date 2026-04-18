@@ -20,6 +20,7 @@ import time
 import pickle
 import argparse
 import numpy as np
+import csv
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 
@@ -31,6 +32,19 @@ from PIL import Image
 from torchvision import transforms
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
+
+def _json_default(o):
+    """Helper for json.dumps to handle numpy types and Paths."""
+    if isinstance(o, (np.integer,)):
+        return int(o)
+    if isinstance(o, (np.floating,)):
+        return float(o)
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    if isinstance(o, Path):
+        return str(o)
+    raise TypeError(f"Type {type(o)} not serializable")
 
 
 # ================================================================
@@ -69,7 +83,13 @@ class EmbeddingModel:
             self.device = torch.device(device)
 
         print(f"Загрузка модели ({self.device})...")
-        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load checkpoint '{checkpoint_path}': {e}")
 
         backbone_name = checkpoint.get("backbone_name", "facebook/dinov2-small")
         embedding_dim = checkpoint.get("embedding_dim", 256)
@@ -78,9 +98,21 @@ class EmbeddingModel:
             backbone_name=backbone_name,
             embedding_dim=embedding_dim,
         )
-        self.model.head.load_state_dict(checkpoint["head_state_dict"])
+        head_state = checkpoint.get("head_state_dict")
+        if head_state is None:
+            print("  Warning: 'head_state_dict' not found in checkpoint — using randomly initialized head.")
+        else:
+            try:
+                self.model.head.load_state_dict(head_state)
+            except Exception as e:
+                print(f"  Warning: strict load of head_state_dict failed: {e}. Trying non-strict load.")
+                self.model.head.load_state_dict(head_state, strict=False)
+
         if checkpoint.get("backbone_state_dict"):
-            self.model.backbone.load_state_dict(checkpoint["backbone_state_dict"])
+            try:
+                self.model.backbone.load_state_dict(checkpoint["backbone_state_dict"])
+            except Exception as e:
+                print(f"  Warning: loading backbone_state_dict failed: {e} (ignoring)")
 
         self.model.to(self.device)
         self.model.eval()
@@ -137,10 +169,13 @@ class EmbeddingModel:
 
             all_embeddings.append(embeddings.cpu().numpy())
 
+        if not all_embeddings:
+            return np.empty((0, self.embedding_dim), dtype=np.float32)
+
         return np.vstack(all_embeddings)
 
     def compare(self, image1, image2) -> float:
-        """Cosine similarity между двумя изображениями. [0..1]"""
+        """Cosine similarity между двумя изображениями. (диапазон [-1..1])"""
         e1 = self.get_embedding(image1)
         e2 = self.get_embedding(image2)
         return float(np.dot(e1, e2))
@@ -205,9 +240,21 @@ class VectorDB:
         if len(self.embeddings) == 0:
             return []
 
-        db_matrix = np.array(self.embeddings)  # (N, dim)
+        # Stack/convert to numeric array safely
+        db_matrix = np.asarray(self.embeddings, dtype=np.float32)
+        query_vec = np.asarray(query_embedding, dtype=np.float32)
+
+        if query_vec.ndim == 2 and query_vec.shape[0] == 1:
+            query_vec = query_vec.flatten()
+
+        if db_matrix.ndim != 2 or query_vec.ndim != 1:
+            raise ValueError(f"Bad embeddings shape: db={db_matrix.shape}, query={query_vec.shape}")
+
+        if db_matrix.shape[1] != query_vec.shape[0]:
+            raise ValueError(f"Embedding dimension mismatch: db_dim={db_matrix.shape[1]}, query_dim={query_vec.shape[0]}")
+
         # Cosine similarity (вектора уже L2-нормализованы)
-        scores = np.dot(db_matrix, query_embedding)
+        scores = db_matrix.dot(query_vec)
 
         top_k = min(top_k, len(scores))
         top_indices = np.argsort(scores)[::-1][:top_k]
@@ -238,6 +285,10 @@ class VectorDB:
 
     def save(self, path: str):
         """Сохранить базу на диск."""
+        dirn = os.path.dirname(path)
+        if dirn:
+            os.makedirs(dirn, exist_ok=True)
+
         data = {
             "ids": self.ids,
             "embeddings": np.array(self.embeddings) if self.embeddings else np.array([]),
@@ -288,14 +339,40 @@ class FruitSearchEngine:
 
     SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
-    def __init__(self, checkpoint_path: str, db_path: str = None, device: str = "auto"):
+    def __init__(self, checkpoint_path: str, db_path: str = None, device: str = "auto",
+                 db_backend: str = "faiss", db_config: Optional[Dict] = None):
         self.model = EmbeddingModel(checkpoint_path, device)
-        self.db = VectorDB()
+
+        # Choose DB backend: 'numpy' (VectorDB), 'faiss', or 'qdrant'
+        # db_backend: optional string; db_config: optional dict for backend-specific params
+        def _init_db(db_backend: str = "faiss", db_config: Optional[Dict] = None):
+            # Enforce FaissDB as the only supported backend for production prototype.
+            backend = (db_backend or "faiss").lower()
+            if backend != "faiss":
+                print(f"  Warning: requested db_backend='{db_backend}' ignored. Only 'faiss' is supported.")
+
+            try:
+                # Import FaissDB and ensure underlying faiss library is available
+                from db_adapters import FaissDB, faiss as _faiss
+            except Exception as e:
+                raise RuntimeError(f"FaissDB adapter not available: {e}") from e
+
+            if _faiss is None:
+                raise ImportError("Faiss library is not installed. Install 'faiss-cpu' or 'faiss-gpu' to use FaissDB.")
+
+            print(f"  Инициализация FaissDB (dim={self.model.embedding_dim})")
+            return FaissDB(dim=self.model.embedding_dim)
+
+        # default backend is 'numpy' — may be overridden by caller
+        self.db = _init_db(db_backend, db_config)
 
         if db_path and os.path.exists(db_path):
-            self.db.load(db_path)
+            try:
+                self.db.load(db_path)
+            except Exception as e:
+                print(f"  Warning: failed to load DB from {db_path}: {e}")
 
-    def build_database(self, images_dir: str, batch_size: int = 32):
+    def build_database(self, images_dir: str, batch_size: int = 32, products_csv: Optional[str] = None):
         """
         Построить БД из папки с изображениями.
 
@@ -313,11 +390,49 @@ class FruitSearchEngine:
         print(f"\nПостроение базы из: {images_dir}")
         start_time = time.time()
 
+        # Попытка загрузить соответствие filename -> product_id из CSV.
+        filename_to_pid = {}
+        category_to_pid = {}
+        csv_path = None
+        if products_csv:
+            csv_path = products_csv
+        else:
+            # accept both 'products.csv' and 'product.csv' (case-sensitive filename)
+            candidates = [os.path.join(images_dir, "products.csv"), os.path.join(images_dir, "product.csv")]
+            for c in candidates:
+                if os.path.exists(c):
+                    csv_path = c
+                    break
+
+        if csv_path:
+            try:
+                with open(csv_path, newline='', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        pid = row.get("product_id") or row.get("product") or row.get("productId")
+                        fname = row.get("filename") or row.get("id") or row.get("image")
+                        category = row.get("category")
+                        if fname and pid:
+                            # normalize filename: strip quotes/spaces and index by both basename and original (lowercased)
+                            fname_norm = str(fname).strip().strip('"').strip("'")
+                            bname = Path(fname_norm).name
+                            filename_to_pid[bname.lower()] = pid
+                            filename_to_pid[fname_norm.lower()] = pid
+                        elif category and pid:
+                            category_to_pid[category.lower()] = pid
+                print(f"  Загружено отображение product_id из: {csv_path} ({len(filename_to_pid)} файлов, {len(category_to_pid)} категорий)")
+            except Exception as e:
+                print(f"  Warning: failed to parse products CSV {csv_path}: {e}")
+
         image_paths = []
         image_ids = []
         image_metadata = []
 
         root = Path(images_dir)
+
+        if not root.exists() or not root.is_dir():
+            print(f"  Путь не найден или не директория: {images_dir}")
+            return
 
         # Проверяем: вложенные папки (категории) или плоская структура
         subdirs = [d for d in root.iterdir() if d.is_dir()]
@@ -330,10 +445,23 @@ class FruitSearchEngine:
                     if img_path.suffix.lower() in self.SUPPORTED_EXTENSIONS:
                         image_paths.append(str(img_path))
                         image_ids.append(f"{category}/{img_path.name}")
+                        # определяем product_id: сначала по filename->pid из CSV (с нормализацией),
+                        # затем по абсолютному пути из CSV, затем по категории, затем по префиксу filename (числа_)
+                        bname = img_path.name
+                        pid = filename_to_pid.get(bname.lower()) or filename_to_pid.get(str(img_path).lower())
+                        if not pid:
+                            pid = category_to_pid.get(category.lower()) or category_to_pid.get(category)
+                        if not pid:
+                            # пример: "123_apple.jpg" -> product_id = "123"
+                            parts = img_path.name.split("_", 1)
+                            if parts and parts[0].isdigit():
+                                pid = parts[0]
+
                         image_metadata.append({
                             "category": category,
                             "filename": img_path.name,
                             "path": str(img_path),
+                            "product_id": pid,
                         })
         else:
             # Плоская структура
@@ -341,10 +469,19 @@ class FruitSearchEngine:
                 if img_path.suffix.lower() in self.SUPPORTED_EXTENSIONS:
                     image_paths.append(str(img_path))
                     image_ids.append(img_path.name)
+                    bname = img_path.name
+                    pid = filename_to_pid.get(bname.lower()) or filename_to_pid.get(str(img_path).lower())
+                    if not pid:
+                        # попробовать извлечь из имени файла префикс
+                        parts = img_path.name.split("_", 1)
+                        if parts and parts[0].isdigit():
+                            pid = parts[0]
+
                     image_metadata.append({
                         "category": "unknown",
                         "filename": img_path.name,
                         "path": str(img_path),
+                        "product_id": pid,
                     })
 
         if not image_paths:
@@ -422,6 +559,9 @@ class FruitSearchEngine:
 
     def save_database(self, path: str):
         """Сохранить БД на диск."""
+        dirn = os.path.dirname(path)
+        if dirn:
+            os.makedirs(dirn, exist_ok=True)
         self.db.save(path)
 
     def load_database(self, path: str):
@@ -566,7 +706,12 @@ def demo_api_server():
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps(data, ensure_ascii=False).encode())
+            try:
+                payload = json.dumps(data, ensure_ascii=False, default=_json_default)
+            except TypeError:
+                # Fallback: attempt to convert loosely
+                payload = json.dumps(data, ensure_ascii=False, default=lambda o: str(o))
+            self.wfile.write(payload.encode())
 
         def log_message(self, format, *args):
             print(f"  [{self.address_string()}] {args[0]}")
@@ -609,8 +754,10 @@ def main():
 
     parser.add_argument("--model", default="C:\\Users\\artur\\Desktop\\Yandex_Cemp\\fruit_embedder_final.pth",
                         help="Путь к чекпоинту модели")
-    parser.add_argument("--db", default="fruits.db",
+    parser.add_argument("--db", default=os.path.join("Server_prod","DB","fruits.db"),
                         help="Путь к файлу базы данных")
+    parser.add_argument("--db-backend", choices=["faiss"], default="faiss",
+                        help="Выбрать бэкенд для векторной БД (только: faiss)")
     parser.add_argument("--build", type=str,
                         help="Построить базу из папки с изображениями")
     parser.add_argument("--search", type=str,
@@ -633,18 +780,33 @@ def main():
         parser.print_help()
         return
 
-    engine = FruitSearchEngine(args.model, args.db)
+    # Resolve DB path relative to project root to avoid creating nested
+    # Server_prod/ML/Server_prod when running from inside Server_prod/ML.
+    db_path_arg = args.db
+    if not os.path.isabs(db_path_arg):
+        # project root: two levels up from this file (.. / .. / this_file)
+        project_root = Path(__file__).resolve().parents[2]
+        db_path = str(project_root.joinpath(db_path_arg))
+    else:
+        db_path = db_path_arg
+
+    print(f"Using DB file: {db_path}")
+    engine = FruitSearchEngine(args.model, db_path, db_backend=args.db_backend)
 
     if args.build:
         engine.build_database(args.build)
-        engine.save_database(args.db)
+        engine.save_database(db_path)
 
     if args.search:
         results = engine.search(args.search, top_k=args.top)
         print(f"\nТоп-{args.top} похожих:")
         for i, r in enumerate(results, 1):
             cat = r["metadata"].get("category", "")
-            print(f"  {i}. [{r['score']:.3f}] {cat} — {r['id']}")
+            pid = r["metadata"].get("product_id", "")
+            pid_str = f" product_id:{pid}" if pid else ""
+            meta_str = json.dumps(r["metadata"], ensure_ascii=False, default=_json_default)
+            print(f"  {i}. [{r['score']:.3f}] {cat} — {r['id']}{pid_str}")
+            print(f"     metadata: {meta_str}")
 
     if args.compare:
         result = engine.compare(args.compare[0], args.compare[1])
@@ -656,7 +818,11 @@ def main():
         print(f"\nЭто скорее всего:")
         for i, p in enumerate(predictions, 1):
             cat = p["metadata"].get("category", "?")
-            print(f"  {i}. {cat} ({p['score']:.3f})")
+            pid = p["metadata"].get("product_id", "")
+            pid_str = f" product_id:{pid}" if pid else ""
+            meta_str = json.dumps(p["metadata"], ensure_ascii=False, default=_json_default)
+            print(f"  {i}. {cat} ({p['score']:.3f}){pid_str}")
+            print(f"     metadata: {meta_str}")
 
     if args.stats:
         stats = engine.stats()

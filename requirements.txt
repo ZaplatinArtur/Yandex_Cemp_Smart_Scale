@@ -1,3 +1,5 @@
 torch
 torchvision
 opencv-python
+faiss-cpu
+faiss-gpu
