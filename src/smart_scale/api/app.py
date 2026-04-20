@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from smart_scale.api.errors import ServiceUnavailableError
 from smart_scale.api.routes import router
+from smart_scale.api.routes.ui import ui_router
 from smart_scale.config import Settings, get_settings
 from smart_scale.ml.pipeline import RecognitionPipeline
 
@@ -49,6 +50,13 @@ def create_app(
             health.get("catalog_items"),
             health.get("vector_backend"),
         )
+        LOGGER.info(
+            "event=models_used onnx_model=%s detection_model=%s detector_name=%s embedding_backend=%s",
+            str(resolved_settings.onnx_model),
+            str(resolved_settings.detection_model_path),
+            health.get("detector_name"),
+            health.get("embedding_backend"),
+        )
 
         try:
             yield
@@ -65,6 +73,8 @@ def create_app(
         lifespan=lifespan,
     )
     app.include_router(router, prefix="/api")
+    # UI and helper endpoints (template + image serving)
+    app.include_router(ui_router)
     _register_exception_handlers(app)
 
     @app.get("/")

@@ -54,6 +54,36 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        # Resolve paths and prefer a quantized ONNX model when available.
+        # Priority:
+        # 1. SMART_SCALE_ONNX_QUANT_PATH (explicit env override)
+        # 2. sibling file next to default with suffix `_int8` (auto-detected)
+        # 3. SMART_SCALE_ONNX_PATH or default asset
+        onnx_env = os.getenv("SMART_SCALE_ONNX_PATH")
+        onnx_default = _as_path(onnx_env, PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.onnx")
+        quant_env = os.getenv("SMART_SCALE_ONNX_QUANT_PATH")
+        if quant_env:
+            onnx_model_path = _as_path(quant_env, onnx_default)
+        else:
+            cand = onnx_default.with_name(onnx_default.stem + "_int8" + onnx_default.suffix)
+            if cand.exists():
+                onnx_model_path = cand
+            else:
+                onnx_model_path = onnx_default
+
+        # Resolve detection model and prefer a quantized version if available
+        det_env = os.getenv("SMART_SCALE_DETECTION_MODEL")
+        det_default = _as_path(det_env, PROJECT_ROOT / "assets" / "models" / "yolo.onnx")
+        det_quant_env = os.getenv("SMART_SCALE_DETECTION_QUANT_PATH")
+        if det_quant_env:
+            detection_model_path = _as_path(det_quant_env, det_default)
+        else:
+            cand_det = det_default.with_name(det_default.stem + "_int8" + det_default.suffix)
+            if cand_det.exists():
+                detection_model_path = cand_det
+            else:
+                detection_model_path = det_default
+
         return cls(
             project_root=PROJECT_ROOT,
             image_catalog_dir=_as_path(os.getenv("SMART_SCALE_IMAGE_DIR"), PROJECT_ROOT / "images"),
@@ -70,10 +100,7 @@ class Settings:
                 os.getenv("SMART_SCALE_MODEL_PATH"),
                 PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.pth",
             ),
-            onnx_model=_as_path(
-                os.getenv("SMART_SCALE_ONNX_PATH"),
-                PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.onnx",
-            ),
+            onnx_model=onnx_model_path,
             vector_db_path=_as_path(
                 os.getenv("SMART_SCALE_VECTOR_DB_PATH"),
                 PROJECT_ROOT / "data" / "vector_db" / "fruits.db",
@@ -88,10 +115,7 @@ class Settings:
                 "postgresql://smart_scale:smart_scale@localhost:5433/smart_scale",
             ),
             pgvector_table=os.getenv("SMART_SCALE_PGVECTOR_TABLE", "product_embeddings"),
-            detection_model_path=_as_path(
-                os.getenv("SMART_SCALE_DETECTION_MODEL"),
-                PROJECT_ROOT / "assets" / "models" / "yolo11n-seg.pt",
-            ),
+            detection_model_path=detection_model_path,
             hand_landmarker_path=_as_path(
                 os.getenv("SMART_SCALE_HAND_LANDMARKER_PATH"),
                 PROJECT_ROOT / "assets" / "models" / "hand_landmarker.task",
