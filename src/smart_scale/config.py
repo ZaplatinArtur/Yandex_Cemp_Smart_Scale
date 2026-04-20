@@ -76,7 +76,7 @@ class Settings:
             pgvector_table=os.getenv("SMART_SCALE_PGVECTOR_TABLE", "product_embeddings"),
             detection_model_path=_as_path(
                 os.getenv("SMART_SCALE_DETECTION_MODEL"),
-                PROJECT_ROOT / "assets" / "models" / "yolo11n-seg.pt",
+                PROJECT_ROOT / "assets" / "models" / "yolo.onnx",
             ),
             hand_landmarker_path=_as_path(
                 os.getenv("SMART_SCALE_HAND_LANDMARKER_PATH"),
