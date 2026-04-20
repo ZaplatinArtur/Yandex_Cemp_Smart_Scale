@@ -29,6 +29,8 @@ class Settings:
     project_root: Path
     image_catalog_dir: Path
     products_csv: Path
+    dataset_dir: Path
+    price_catalog_path: Path
     model_checkpoint: Path
     onnx_model: Path
     vector_db_path: Path
@@ -46,6 +48,7 @@ class Settings:
     build_index_on_startup: bool
     hand_detection_enabled: bool
     embedding_dim: int
+    samples_per_sort: int
     weight_stability_tolerance: float
     weight_stability_window: int
 
@@ -55,6 +58,14 @@ class Settings:
             project_root=PROJECT_ROOT,
             image_catalog_dir=_as_path(os.getenv("SMART_SCALE_IMAGE_DIR"), PROJECT_ROOT / "images"),
             products_csv=_as_path(os.getenv("SMART_SCALE_PRODUCTS_CSV"), PROJECT_ROOT / "images" / "product.csv"),
+            dataset_dir=_as_path(
+                os.getenv("SMART_SCALE_DATASET_DIR"),
+                PROJECT_ROOT / "varieties_classification_dataset",
+            ),
+            price_catalog_path=_as_path(
+                os.getenv("SMART_SCALE_PRICE_CATALOG"),
+                PROJECT_ROOT / "data" / "product_prices.py",
+            ),
             model_checkpoint=_as_path(
                 os.getenv("SMART_SCALE_MODEL_PATH"),
                 PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.pth",
@@ -71,8 +82,11 @@ class Settings:
                 os.getenv("SMART_SCALE_FILE_VECTOR_STORE_PATH"),
                 PROJECT_ROOT / "data" / "vector_db" / "catalog.pkl",
             ),
-            vector_backend=os.getenv("SMART_SCALE_VECTOR_BACKEND", "file").strip().lower(),
-            pgvector_dsn=os.getenv("SMART_SCALE_PGVECTOR_DSN"),
+            vector_backend=os.getenv("SMART_SCALE_VECTOR_BACKEND", "pgvector").strip().lower(),
+            pgvector_dsn=os.getenv(
+                "SMART_SCALE_PGVECTOR_DSN",
+                "postgresql://smart_scale:smart_scale@localhost:5433/smart_scale",
+            ),
             pgvector_table=os.getenv("SMART_SCALE_PGVECTOR_TABLE", "product_embeddings"),
             detection_model_path=_as_path(
                 os.getenv("SMART_SCALE_DETECTION_MODEL"),
@@ -90,6 +104,7 @@ class Settings:
             build_index_on_startup=_as_bool(os.getenv("SMART_SCALE_BUILD_INDEX"), False),
             hand_detection_enabled=_as_bool(os.getenv("SMART_SCALE_HAND_DETECTION"), True),
             embedding_dim=int(os.getenv("SMART_SCALE_EMBEDDING_DIM", "256")),
+            samples_per_sort=int(os.getenv("SMART_SCALE_SAMPLES_PER_SORT", "5")),
             weight_stability_tolerance=float(os.getenv("SMART_SCALE_WEIGHT_TOLERANCE", "2.0")),
             weight_stability_window=int(os.getenv("SMART_SCALE_WEIGHT_WINDOW", "5")),
         )

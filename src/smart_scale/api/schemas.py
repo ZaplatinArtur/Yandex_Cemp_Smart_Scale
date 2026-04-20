@@ -8,8 +8,10 @@ from pydantic import BaseModel, Field
 class MatchResponse(BaseModel):
     product_id: str
     name: str
+    product_type: str
+    product_sort: str
     score: float
-    price_per_gram: float | None = None
+    price_rub_per_kg: float | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -35,7 +35,7 @@ class FakePipeline:
         self._result = result
         self._health = health or {
             "status": "ok",
-            "vector_backend": "file",
+            "vector_backend": "pgvector",
             "vector_index_ready": True,
             "model_ready": True,
             "catalog_items": 2,
@@ -111,7 +111,9 @@ class APITests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["status"], "ok")
-        self.assertEqual(payload["product"]["product_id"], "apple")
+        self.assertEqual(payload["product"]["product_id"], "apple_fuji")
+        self.assertEqual(payload["product"]["product_type"], "apple")
+        self.assertEqual(payload["product"]["product_sort"], "fuji")
 
     def test_predict_rejects_empty_file(self) -> None:
         pipeline = FakePipeline(result=_ok_result())
@@ -221,26 +223,29 @@ def _ok_result() -> RecognitionResult:
         message="Товар распознан.",
         weight_grams=125.0,
         product=ProductMatch(
-            product_id="apple",
-            name="Apple",
+            product_id="apple_fuji",
+            product_type="apple",
+            product_sort="fuji",
             score=0.99,
-            price_per_gram=1.5,
-            metadata={"category": "fruit"},
+            price_rub_per_kg=150.0,
+            metadata={"product_type": "apple", "product_sort": "fuji"},
         ),
         top_matches=[
             ProductMatch(
-                product_id="apple",
-                name="Apple",
+                product_id="apple_fuji",
+                product_type="apple",
+                product_sort="fuji",
                 score=0.99,
-                price_per_gram=1.5,
-                metadata={"category": "fruit"},
+                price_rub_per_kg=150.0,
+                metadata={"product_type": "apple", "product_sort": "fuji"},
             ),
             ProductMatch(
-                product_id="pear",
-                name="Pear",
+                product_id="pear_conference",
+                product_type="pear",
+                product_sort="conference",
                 score=0.75,
-                price_per_gram=1.1,
-                metadata={"category": "fruit"},
+                price_rub_per_kg=110.0,
+                metadata={"product_type": "pear", "product_sort": "conference"},
             ),
         ],
         crop=CropResult(
@@ -250,7 +255,7 @@ def _ok_result() -> RecognitionResult:
             detector_name="fake_detector",
             mask_applied=True,
         ),
-        total_price=187.5,
+        total_price=18.75,
         embedding_dim=256,
         pipeline_steps=["response_ready"],
     )

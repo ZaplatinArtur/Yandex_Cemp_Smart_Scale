@@ -24,10 +24,15 @@ class CropResult:
 @dataclass(slots=True)
 class ProductMatch:
     product_id: str
-    name: str
+    product_type: str
+    product_sort: str
     score: float
-    price_per_gram: float | None = None
+    price_rub_per_kg: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def name(self) -> str:
+        return f"{self.product_type}_{self.product_sort}" if self.product_sort else self.product_type
 
 
 @dataclass(slots=True)

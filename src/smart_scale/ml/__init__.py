@@ -1,4 +1,5 @@
 from .anomaly import HandAnomalyDetector
+from .catalog_seed import PackEatCatalogSeeder
 from .detection import ProductLocalizer
 from .embedding import DinoV2Embedder
 from .pipeline import RecognitionPipeline
@@ -10,6 +11,7 @@ __all__ = [
     "FaissVectorStore",
     "FileVectorStore",
     "HandAnomalyDetector",
+    "PackEatCatalogSeeder",
     "PgVectorStore",
     "ProductLocalizer",
     "RecognitionPipeline",

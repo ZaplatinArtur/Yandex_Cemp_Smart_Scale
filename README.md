@@ -1,168 +1,263 @@
-# Smart Scale Recognition Service
+# Smart Scale
 
-Распознавание фруктов и овощей по фото и весу. Пайплайн: MediaPipe Hands для блокировки кадров с руками, `yolo11n-seg` для сегментации объекта, `DinoV2`-эмбеддинги для поиска по локальному каталогу.
+Сервис распознавания фруктов и овощей по изображению и весу.
+
+Текущий пайплайн:
+- `MediaPipe Hands` для блокировки кадров с руками
+- `YOLO11n-seg` для локализации и сегментации продукта
+- `DINOv2` для построения эмбеддингов
+- `PostgreSQL + pgvector` для поиска ближайшего товара по эмбеддингу
+
+Проект уже настроен под каталог продуктов в `pgvector` со схемой:
+- `product_id`
+- `embedding`
+- `product_type`
+- `product_sort`
+- `price_rub_per_kg`
+
+## Что нужно для работы
+
+- Windows + PowerShell
+- Python `3.11+`
+- Docker Desktop
+- локальный датасет в [varieties_classification_dataset](varieties_classification_dataset)
+- прайс-лист в [product_prices.py](data/product_prices.py)
+- модели в [assets/models](assets/models)
+
+Обязательные файлы моделей:
+- `assets/models/fruit_embedder_final.onnx`
+- `assets/models/fruit_embedder_final.onnx.data`
+- `assets/models/fruit_embedder_final.pth`
+- `assets/models/yolo11n-seg.pt`
+
+Опционально:
+- `assets/models/hand_landmarker.task`
+
+Если `hand_landmarker.task` отсутствует, API всё равно запустится, но этап проверки рук будет работать в skip-режиме.
 
 ## Структура проекта
 
 ```text
 .
-|-- api.py                                # Совместимый thin wrapper для локального запуска
+|-- api.py
 |-- assets/
-|   `-- models/                           # ONNX/PyTorch, YOLO и MediaPipe assets
+|   `-- models/
 |-- data/
-|   `-- vector_db/                        # Файловый векторный индекс
+|   `-- product_prices.py
 |-- docs/
-|   |-- TASK.MD
-|   `-- architecture.md
-|-- images/                               # Локальный каталог изображений + product.csv
-|-- pyproject.toml                        # Метаданные пакета и console script
+|-- images/
 |-- src/
 |   `-- smart_scale/
 |       |-- api/
-|       |   |-- app.py                    # Lifespan, startup warmup, root endpoint
-|       |   |-- dependencies.py
-|       |   |-- errors.py
-|       |   |-- schemas.py
-|       |   `-- routes/
-|       |       `-- predict.py            # /api/predict и /api/health
-|       |-- cli.py                        # Console entrypoint smart-scale-api
-|       |-- config.py                     # Settings и env vars
+|       |-- bootstrap.py
+|       |-- cli.py
+|       |-- config.py
 |       |-- domain/
-|       |   `-- models.py
-|       |-- hardware/
-|       |   |-- camera.py
-|       |   |-- controller.py
-|       |   `-- scale.py
 |       `-- ml/
-|           |-- anomaly.py                # MediaPipe Hands
-|           |-- detection.py              # YOLO segmentation + crop
-|           |-- embedding.py              # DinoV2 embedder
-|           |-- pipeline.py               # RecognitionPipeline
-|           `-- vector_store.py           # File/FAISS/PgVector backends
 |-- tests/
-|   |-- _bootstrap.py                     # Общий bootstrap для test imports
-|   |-- test_api.py
-|   `-- test_ml_pipeline.py
-`-- requirements.txt
+|-- varieties_classification_dataset/
+|   |-- train/
+|   `-- test/
+|-- docker-compose.pgvector.yml
+|-- pyproject.toml
+|-- requirements.txt
+`-- README.md
 ```
 
-## Установка
+## Конфигурация по умолчанию
+
+Сейчас проект ожидает такие default-значения:
+
+- `SMART_SCALE_VECTOR_BACKEND=pgvector`
+- `SMART_SCALE_PGVECTOR_DSN=postgresql://smart_scale:smart_scale@localhost:5433/smart_scale`
+- `SMART_SCALE_PGVECTOR_TABLE=product_embeddings`
+- `SMART_SCALE_DATASET_DIR=D:\Yandex_Cemp_Smart_Scale\varieties_classification_dataset`
+- `SMART_SCALE_PRICE_CATALOG=D:\Yandex_Cemp_Smart_Scale\data\product_prices.py`
+- `SMART_SCALE_SAMPLES_PER_SORT=5`
+- `SMART_SCALE_API_HOST=0.0.0.0`
+- `SMART_SCALE_API_PORT=8000`
+
+То есть базовый happy path уже рассчитан на локальный `pgvector` на порту `5433`.
+
+## Установка зависимостей
+
+Рекомендуемый вариант:
 
 ```powershell
-py -m venv .venv
+py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -e .
 ```
 
-`requirements.txt` остаётся источником runtime-зависимостей, а `pyproject.toml` делает проект устанавливаемым в editable-режиме без ручной правки `PYTHONPATH`.
-
-Если активация окружения запрещена политикой PowerShell, можно использовать `.venv\Scripts\python.exe` напрямую:
+Если активация PowerShell запрещена политикой:
 
 ```powershell
+.venv\Scripts\python.exe -m pip install --upgrade pip
 .venv\Scripts\python.exe -m pip install -e .
 ```
 
-## Модели и данные
+`pyproject.toml` уже регистрирует console scripts:
+- `smart-scale-api`
+- `smart-scale-bootstrap`
 
-Обязательные файлы в `assets/models/`:
+## Как поднять БД
 
-- `fruit_embedder_final.onnx`
-- `fruit_embedder_final.onnx.data`
-- `fruit_embedder_final.pth`
-- `yolo11n-seg.pt`
+В проекте есть готовый compose для `pgvector`.
 
-Опционально:
-
-- `hand_landmarker.task`
-
-Каталог для поиска должен быть доступен одним из двух способов:
-
-- готовый индекс `data/vector_db/catalog.pkl`
-- или исходные данные `images/` + `images/product.csv`
-
-Если каких-то моделей нет, их можно скачать вручную:
+Запуск:
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing `
-  -Uri "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n-seg.pt" `
-  -OutFile "assets/models/yolo11n-seg.pt"
-
-Invoke-WebRequest -UseBasicParsing `
-  -Uri "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task" `
-  -OutFile "assets/models/hand_landmarker.task"
+docker compose -f docker-compose.pgvector.yml up -d
 ```
 
-## Запуск
+Что поднимется:
+- контейнер `smart-scale-pgvector`
+- PostgreSQL с расширением `pgvector`
+- внешний порт `5433`
 
-Рекомендуемый способ после `pip install -e .`:
+Строка подключения:
+
+```text
+postgresql://smart_scale:smart_scale@localhost:5433/smart_scale
+```
+
+Проверка, что база жива:
 
 ```powershell
+docker ps
+docker exec smart-scale-pgvector pg_isready -U smart_scale -d smart_scale
+```
+
+Проверка, что таблица уже заполнена:
+
+```powershell
+docker exec smart-scale-pgvector psql -U smart_scale -d smart_scale -c "SELECT COUNT(*) FROM product_embeddings;"
+```
+
+## Как заполнить БД
+
+Рекомендуемый сценарий: заполнять БД отдельной bootstrap-командой, а не надеяться на автосборку при старте API.
+
+### 1. Выставить переменные окружения
+
+```powershell
+$env:SMART_SCALE_VECTOR_BACKEND = "pgvector"
+$env:SMART_SCALE_PGVECTOR_DSN = "postgresql://smart_scale:smart_scale@localhost:5433/smart_scale"
+$env:SMART_SCALE_PGVECTOR_TABLE = "product_embeddings"
+$env:SMART_SCALE_DATASET_DIR = "D:\Yandex_Cemp_Smart_Scale\varieties_classification_dataset"
+$env:SMART_SCALE_PRICE_CATALOG = "D:\Yandex_Cemp_Smart_Scale\data\product_prices.py"
+$env:SMART_SCALE_SAMPLES_PER_SORT = "5"
+```
+
+### 2. Запустить bootstrap
+
+```powershell
+smart-scale-bootstrap
+```
+
+Или без активации окружения:
+
+```powershell
+.venv\Scripts\python.exe -m smart_scale.bootstrap
+```
+
+Что делает bootstrap:
+- прогревает embedder
+- создаёт таблицу `product_embeddings`, если её ещё нет
+- мигрирует старую схему, если это возможно
+- находит изображения сортов в `varieties_classification_dataset`
+- берёт по `5` изображений на каждый сорт из прайс-листа
+- строит эмбеддинги
+- атомарно заменяет каталог в `pgvector`
+
+Ожидаемый результат для текущего проекта:
+- `64` сортов в [product_prices.py](data/product_prices.py)
+- `5` эмбеддингов на сорт
+- всего `320` строк в `product_embeddings`
+
+Быстрая проверка после bootstrap:
+
+```powershell
+docker exec smart-scale-pgvector psql -U smart_scale -d smart_scale -c "SELECT COUNT(*) FROM product_embeddings;"
+```
+
+## Как запустить API
+
+После того как БД уже заполнена:
+
+```powershell
+$env:SMART_SCALE_VECTOR_BACKEND = "pgvector"
+$env:SMART_SCALE_PGVECTOR_DSN = "postgresql://smart_scale:smart_scale@localhost:5433/smart_scale"
+$env:SMART_SCALE_BUILD_INDEX = "0"
 smart-scale-api
 ```
 
-Альтернатива через пакет:
+Альтернативы:
 
 ```powershell
 .venv\Scripts\python.exe -m smart_scale
 ```
 
-Совместимый запуск через корневой wrapper:
+или
 
 ```powershell
 .venv\Scripts\python.exe api.py
 ```
 
-Локально через uvicorn:
+На старте сервис делает warmup:
+- проверяет модели и конфиг
+- инициализирует YOLO
+- инициализирует MediaPipe
+- прогревает embedder
+- проверяет доступность каталога в `pgvector`
+
+По умолчанию API поднимается на:
+
+- `http://127.0.0.1:8000`
+- `http://127.0.0.1:8000/docs`
+- `http://127.0.0.1:8000/api/health`
+
+## Как запустить API с автоматическим bootstrap
+
+Так можно, но это менее удобно для отладки.
 
 ```powershell
-.venv\Scripts\python.exe -m uvicorn smart_scale.api:app --host 0.0.0.0 --port 8000
+$env:SMART_SCALE_VECTOR_BACKEND = "pgvector"
+$env:SMART_SCALE_PGVECTOR_DSN = "postgresql://smart_scale:smart_scale@localhost:5433/smart_scale"
+$env:SMART_SCALE_BUILD_INDEX = "1"
+smart-scale-api
 ```
 
-Сервис на старте делает eager warmup:
+В этом режиме, если таблица пуста, warmup сам попробует собрать каталог из:
+- `SMART_SCALE_DATASET_DIR`
+- `SMART_SCALE_PRICE_CATALOG`
 
-1. валидирует конфиг и пути к моделям;
-2. создаёт `RecognitionPipeline`;
-3. прогревает embedder;
-4. инициализирует hand detector и YOLO;
-5. загружает файловый индекс или собирает его из `images/`.
+Для рабочей эксплуатации всё равно лучше отдельный `smart-scale-bootstrap`, а API держать с `SMART_SCALE_BUILD_INDEX=0`.
 
-Если критический компонент не готов, API не поднимается частично, а падает на старте.
+## Как проверить, что сервис реально работает
 
-Остановка сервера:
+### Healthcheck
 
 ```powershell
-Ctrl+C
+curl.exe http://127.0.0.1:8000/api/health
 ```
 
-Если процесс висит в фоне:
+Ожидаемый смысл полей:
+- `vector_backend=pgvector`
+- `vector_index_ready=true`
+- `catalog_items=320`
+- `warmup_completed=true`
 
-```powershell
-cmd /c netstat -ano | findstr :8000
-Stop-Process -Id <PID>
+### Swagger
+
+Открыть:
+
+```text
+http://127.0.0.1:8000/docs
 ```
 
-## URL
-
-| URL | Описание |
-|-----|----------|
-| http://localhost:8000/ | Root endpoint с ссылками на API |
-| http://localhost:8000/docs | Swagger UI |
-| http://localhost:8000/api/health | Readiness после warmup |
-
-## API
-
-| Метод | Путь | Описание |
-|-------|------|----------|
-| GET | `/` | Короткий discovery endpoint |
-| GET | `/api/health` | Статус прогрева и готовности пайплайна |
-| POST | `/api/predict` | Фото + вес -> распознавание товара |
-
-**POST /api/predict**: `image`, `weight_grams`, `top_k`
-
-Входной формат: `multipart/form-data`
-
-Пример PowerShell:
+### Пример запроса на распознавание
 
 ```powershell
 curl.exe -X POST `
@@ -172,86 +267,128 @@ curl.exe -X POST `
   http://127.0.0.1:8000/api/predict
 ```
 
-Пример ответа:
+Пример актуального ответа:
 
 ```json
 {
   "status": "ok",
-  "message": "Product recognized.",
+  "message": "Товар распознан.",
   "weight_grams": 100.0,
-  "total_price": 10000.0,
+  "total_price": 17.5,
   "product": {
-    "product_id": "r0_10/r0_10",
-    "name": "r0_10",
-    "score": 0.9826,
-    "price_per_gram": 100.0
+    "product_id": "apple_fuji:01",
+    "name": "apple_fuji",
+    "product_type": "apple",
+    "product_sort": "fuji",
+    "score": 0.98,
+    "price_rub_per_kg": 175.0,
+    "metadata": {
+      "product_type": "apple",
+      "product_sort": "fuji",
+      "price_rub_per_kg": 175.0
+    }
   },
   "top_matches": [],
   "anomaly_detected": false,
   "warning_code": null,
   "crop": {
-    "bbox": [0, 4, 453, 383],
-    "confidence": 0.5289,
+    "bbox": [0, 0, 100, 100],
+    "confidence": 0.95,
     "detector_name": "yolo11n-seg.pt",
     "mask_applied": true
   },
-  "embedding_dim": 256
+  "embedding_dim": 256,
+  "pipeline_steps": [
+    "weight_received",
+    "anomaly_check_started",
+    "anomaly_check_completed",
+    "localization_completed",
+    "embedding_completed",
+    "knn_search_completed",
+    "response_ready"
+  ]
 }
 ```
 
-Семантика `status`:
-
-- `ok` — товар найден
-- `warning` — бизнес-блокировка, например обнаружены руки
-- `error` — запрос валиден, но результат распознавания не получен
-
-HTTP-коды:
-
-- `200` — валидный запрос, итог смотреть в поле `status`
-- `400` — битое изображение, пустой файл или невалидные form fields
-- `503` — сервис не готов
-- `500` — внутренняя ошибка
-
 ## Тесты
 
-```powershell
-.venv\Scripts\python.exe -m unittest tests.test_ml_pipeline -v
-.venv\Scripts\python.exe -m unittest tests.test_api -v
-```
-
-Или полный прогон:
+Локально:
 
 ```powershell
 .venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-## Переменные окружения
+Через Docker:
 
-| Переменная | Описание |
-|------------|----------|
-| `SMART_SCALE_API_HOST` | Хост FastAPI, по умолчанию `0.0.0.0` |
-| `SMART_SCALE_API_PORT` | Порт API, по умолчанию `8000` |
-| `SMART_SCALE_API_TITLE` | Имя сервиса в Swagger и root endpoint |
-| `SMART_SCALE_MODEL_PATH` | Путь до PyTorch checkpoint embedder |
-| `SMART_SCALE_ONNX_PATH` | Путь до ONNX-модели embedder |
-| `SMART_SCALE_DETECTION_MODEL` | Путь до `yolo11n-seg.pt` |
-| `SMART_SCALE_HAND_LANDMARKER_PATH` | Путь до `hand_landmarker.task` |
-| `SMART_SCALE_HAND_DETECTION` | Включает или выключает hand detection |
-| `SMART_SCALE_VECTOR_BACKEND` | Backend поиска: `file`, `faiss`, `pgvector` |
-| `SMART_SCALE_FILE_VECTOR_STORE_PATH` | Путь до файлового индекса |
-| `SMART_SCALE_IMAGE_DIR` | Папка с изображениями каталога |
-| `SMART_SCALE_PRODUCTS_CSV` | CSV с метаданными каталога |
-| `SMART_SCALE_TOP_K` | Значение `top_k` по умолчанию |
-| `SMART_SCALE_PRICE_PRECISION` | Точность расчёта цены |
+```powershell
+docker compose -f docker-compose.tests.yml up --build --abort-on-container-exit --exit-code-from tests
+```
+
+## Полезные переменные окружения
+
+Основные:
+
+- `SMART_SCALE_VECTOR_BACKEND`
+- `SMART_SCALE_PGVECTOR_DSN`
+- `SMART_SCALE_PGVECTOR_TABLE`
+- `SMART_SCALE_DATASET_DIR`
+- `SMART_SCALE_PRICE_CATALOG`
+- `SMART_SCALE_SAMPLES_PER_SORT`
+- `SMART_SCALE_BUILD_INDEX`
+- `SMART_SCALE_API_HOST`
+- `SMART_SCALE_API_PORT`
+- `SMART_SCALE_TOP_K`
+- `SMART_SCALE_PRICE_PRECISION`
+
+Пути до моделей:
+
+- `SMART_SCALE_MODEL_PATH`
+- `SMART_SCALE_ONNX_PATH`
+- `SMART_SCALE_DETECTION_MODEL`
+- `SMART_SCALE_HAND_LANDMARKER_PATH`
+
+Поведение hand detection:
+
+- `SMART_SCALE_HAND_DETECTION`
+
+## Рекомендуемый сценарий "с нуля"
+
+Если нужно поднять проект полностью с чистой машины:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e .
+docker compose -f docker-compose.pgvector.yml up -d
+
+$env:SMART_SCALE_VECTOR_BACKEND = "pgvector"
+$env:SMART_SCALE_PGVECTOR_DSN = "postgresql://smart_scale:smart_scale@localhost:5433/smart_scale"
+$env:SMART_SCALE_PGVECTOR_TABLE = "product_embeddings"
+$env:SMART_SCALE_DATASET_DIR = "D:\Yandex_Cemp_Smart_Scale\varieties_classification_dataset"
+$env:SMART_SCALE_PRICE_CATALOG = "D:\Yandex_Cemp_Smart_Scale\data\product_prices.py"
+$env:SMART_SCALE_SAMPLES_PER_SORT = "5"
+$env:SMART_SCALE_BUILD_INDEX = "0"
+
+smart-scale-bootstrap
+smart-scale-api
+```
+
+После этого:
+- Swagger: `http://127.0.0.1:8000/docs`
+- Health: `http://127.0.0.1:8000/api/health`
 
 ## Отладка
 
-- Если startup падает с `PytorchStreamReader failed reading zip archive`, файл `yolo11n-seg.pt` повреждён или обрезан.
-- Если `GET /api/health` не поднимается, проверь пути к ONNX/PyTorch asset и наличие локального индекса.
-- Если `hand_landmarker.task` отсутствует, сервис может стартовать, но hand stage будет работать в skip-режиме.
-- Если порт `8000` занят, выстави другой порт через `SMART_SCALE_API_PORT`.
+- Если `smart-scale-bootstrap` падает с ошибкой по БД, сначала проверь `docker exec smart-scale-pgvector pg_isready -U smart_scale -d smart_scale`.
+- Если сервис не стартует, проверь наличие моделей в `assets/models/`.
+- Если `catalog_items=0`, значит БД не заполнена или указан не тот `SMART_SCALE_PGVECTOR_DSN`.
+- Если при первом старте embedder тянет Hugging Face cache, это ожидаемо: `AutoImageProcessor` для `facebook/dinov2-small` может скачать служебные файлы в кэш.
+- Если порт `8000` занят, задай другой через `SMART_SCALE_API_PORT`.
+- Если порт `5433` уже занят, поменяй маппинг в [docker-compose.pgvector.yml](docker-compose.pgvector.yml) и такой же DSN в окружении.
 
 ## Дополнительно
 
-- [docs/TASK.MD](docs/TASK.MD)
-- [docs/architecture.md](docs/architecture.md)
+- [TASK.MD](docs/TASK.MD)
+- [architecture.md](docs/architecture.md)
+- [pgvector_bootstrap.md](docs/pgvector_bootstrap.md)

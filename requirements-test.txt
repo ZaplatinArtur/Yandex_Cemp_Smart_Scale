@@ -1,0 +1,6 @@
+fastapi
+pydantic
+python-multipart
+numpy
+Pillow
+httpx<1

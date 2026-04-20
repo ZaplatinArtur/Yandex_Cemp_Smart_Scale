@@ -1,0 +1,7 @@
+services:
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.tests
+    working_dir: /app
+    command: python -m unittest discover -s tests -t . -v

@@ -76,8 +76,10 @@ def _to_match_response(match) -> MatchResponse | None:
     return MatchResponse(
         product_id=match.product_id,
         name=match.name,
+        product_type=match.product_type,
+        product_sort=match.product_sort,
         score=match.score,
-        price_per_gram=match.price_per_gram,
+        price_rub_per_kg=match.price_rub_per_kg,
         metadata=match.metadata,
     )
 

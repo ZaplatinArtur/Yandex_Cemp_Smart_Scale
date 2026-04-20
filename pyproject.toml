@@ -12,6 +12,7 @@ dynamic = ["dependencies"]
 
 [project.scripts]
 smart-scale-api = "smart_scale.cli:main"
+smart-scale-bootstrap = "smart_scale.bootstrap:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -6,6 +6,7 @@ from typing import Any
 from smart_scale.config import Settings
 from smart_scale.domain import ProductMatch, RecognitionResult
 from smart_scale.ml.anomaly import HandAnomalyDetector
+from smart_scale.ml.catalog_seed import PackEatCatalogSeeder
 from smart_scale.ml.detection import ProductLocalizer
 from smart_scale.ml.embedding import DinoV2Embedder
 from smart_scale.ml.vector_store import CatalogIndexBuilder, FaissVectorStore, FileVectorStore, PgVectorStore
@@ -44,9 +45,12 @@ class RecognitionPipeline:
         if settings.vector_backend == "pgvector":
             if not settings.pgvector_dsn:
                 raise RuntimeError("Для backend=pgvector требуется SMART_SCALE_PGVECTOR_DSN.")
-            vector_store = PgVectorStore(settings.pgvector_dsn, table=settings.pgvector_table)
+            vector_store = PgVectorStore(
+                settings.pgvector_dsn,
+                dim=settings.embedding_dim,
+                table=settings.pgvector_table,
+            )
             pipeline = cls(settings, hand_detector, localizer, embedder, vector_store)
-            pipeline._search_index_ready = vector_store.count() > 0
             return pipeline
 
         if settings.vector_backend == "faiss":
@@ -119,8 +123,8 @@ class RecognitionPipeline:
 
         best_match = matches[0]
         total_price = None
-        if best_match.price_per_gram is not None:
-            total_price = round(weight_grams * best_match.price_per_gram, self.settings.price_precision)
+        if best_match.price_rub_per_kg is not None:
+            total_price = round((weight_grams / 1000.0) * best_match.price_rub_per_kg, self.settings.price_precision)
 
         steps.append("response_ready")
         return RecognitionResult(
@@ -156,7 +160,12 @@ class RecognitionPipeline:
             return
 
         if self.settings.vector_backend == "pgvector":
-            self._search_index_ready = self.vector_store.count() > 0
+            current_count = self.vector_store.count()
+            if current_count > 0:
+                self._search_index_ready = True
+                return
+            if self.settings.build_index_on_startup:
+                self._bootstrap_pgvector_index()
             return
 
         if self._local_snapshot_exists():
@@ -171,6 +180,16 @@ class RecognitionPipeline:
         indexed_items = builder.build(
             images_dir=self.settings.image_catalog_dir,
             products_csv=self.settings.products_csv,
+        )
+        self.vector_store.save()
+        self._search_index_ready = indexed_items > 0
+
+    def _bootstrap_pgvector_index(self) -> None:
+        builder = PackEatCatalogSeeder(self.embedder, self.vector_store)
+        indexed_items = builder.build(
+            dataset_dir=self.settings.dataset_dir,
+            price_source=self.settings.price_catalog_path,
+            samples_per_sort=self.settings.samples_per_sort,
         )
         self.vector_store.save()
         self._search_index_ready = indexed_items > 0
@@ -196,6 +215,20 @@ class RecognitionPipeline:
 
         if self.settings.vector_backend == "pgvector" and not self.settings.pgvector_dsn:
             raise RuntimeError("Для backend=pgvector требуется SMART_SCALE_PGVECTOR_DSN.")
+
+        if self.settings.vector_backend == "pgvector":
+            if self.vector_store.count() == 0 and self.settings.build_index_on_startup:
+                if not self.settings.dataset_dir.exists():
+                    raise RuntimeError(
+                        "Не найден датасет PackEat для первичного заполнения pgvector."
+                        f" Ожидался каталог {self.settings.dataset_dir}."
+                    )
+                if not self.settings.price_catalog_path.exists():
+                    raise RuntimeError(
+                        "Не найден прайс-лист для первичного заполнения pgvector."
+                        f" Ожидался файл {self.settings.price_catalog_path}."
+                    )
+            return
 
         if self.settings.vector_backend != "pgvector":
             has_snapshot = self._local_snapshot_exists()
