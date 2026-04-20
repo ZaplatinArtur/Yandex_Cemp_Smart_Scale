@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Scale — UI</title>
+    <style>
+      :root{--bg:#f6f8fb;--card:#ffffff;--muted:#6b7280;--accent:#2563eb;--danger:#ef4444;--success:#16a34a}
+      *{box-sizing:border-box}
+      body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:#111827;margin:0;padding:24px}
+      .container{max-width:1100px;margin:0 auto}
+      .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding:14px;border-radius:12px;background:linear-gradient(90deg, rgba(37,99,235,0.06), rgba(99,102,241,0.03));box-shadow:0 8px 24px rgba(2,6,23,0.04)}
+      .brand{display:flex;align-items:center;gap:12px}
+      .logo{width:52px;height:52px;border-radius:10px;background:linear-gradient(135deg,#34d399,#60a5fa);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:1.05rem;box-shadow:0 8px 24px rgba(37,99,235,0.08)}
+      .brand .name{font-size:1.5rem;font-weight:800;color:#0f172a;line-height:1}
+      .brand .sub{color:var(--muted);font-weight:600;font-size:0.95rem;margin-top:2px}
+      h2{display:none;margin:0}
+      .page{display:flex;gap:24px;align-items:flex-start}
+      .main{flex:1}
+      .panel{background:var(--card);padding:18px;border-radius:10px;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
+      .form .field{margin-bottom:12px}
+      label{display:block;font-weight:600;margin-bottom:6px;color:var(--muted)}
+      input[type=number],input[type=text]{padding:8px;border:1px solid #e6e9ee;border-radius:8px}
+      input[type=file]{display:block}
+      button[type=submit]{background:var(--accent);color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer}
+      button[type=submit]:hover{opacity:0.95;transform:translateY(-1px)}
+      .sidebar{width:360px}
+      .results-card{position:sticky;top:20px}
+      .results-card h3{margin:0 0 10px 0}
+      .matches{display:flex;flex-direction:column;gap:12px}
+      .card{background:var(--card);border-radius:10px;padding:10px;box-shadow:0 6px 18px rgba(15,23,42,0.06);cursor:pointer;display:flex;flex-direction:column;align-items:center;transition:transform .14s ease,box-shadow .14s ease}
+      .card:hover{transform:translateY(-6px);box-shadow:0 12px 28px rgba(15,23,42,0.12)}
+      .card img{width:100%;height:160px;object-fit:cover;border-radius:6px;background:#f3f4f6}
+      .card .title{margin-top:8px;font-weight:600;color:#111827}
+      .card .score{margin-top:6px;color:var(--muted);font-size:0.95rem}
+      #status{margin-top:12px;color:var(--muted)}
+      #notMatchBtn{margin-top:10px;background:var(--danger);color:#fff;border:none;padding:8px 10px;border-radius:8px;cursor:pointer;display:inline-block}
+
+      /* File picker styles */
+      .file-picker{border:1px dashed #e6e9ee;border-radius:10px;padding:10px;background:linear-gradient(180deg,rgba(255,255,255,0.6),rgba(250,250,251,0.6));transition:box-shadow .14s ease, border-color .14s ease;cursor:pointer}
+      .file-picker:hover{box-shadow:0 8px 20px rgba(2,6,23,0.04);border-color:rgba(37,99,235,0.18)}
+      .file-picker.dragover{border-color:var(--accent);box-shadow:0 10px 28px rgba(37,99,235,0.08);background:rgba(37,99,235,0.02)}
+      .fp-inner{display:flex;align-items:center;gap:12px}
+      .fp-preview{width:80px;height:80px;flex:0 0 80px;border-radius:8px;overflow:hidden;background:#f8fafc;display:flex;align-items:center;justify-content:center}
+      .fp-preview img{width:100%;height:100%;object-fit:cover;display:block}
+      .fp-text{flex:1;min-width:0}
+      .fp-title{font-weight:600}
+      .fp-sub{color:var(--muted);font-size:0.9rem;margin-top:4px}
+      .browse-btn{background:#fff;border:1px solid #e6e9ee;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--accent)}
+      .browse-btn:hover{background:#f8fafc}
+
+      /* Selection toast (centered confirmation) */
+      .selection-toast{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,0.28);z-index:9999}
+      .selection-card{background:var(--card);padding:16px 20px;border-radius:12px;display:flex;align-items:center;gap:14px;box-shadow:0 12px 30px rgba(2,6,23,0.18);transform:translateY(8px) scale(0.98);opacity:0;transition:transform .28s cubic-bezier(.2,.9,.2,1),opacity .28s}
+      .selection-toast.show .selection-card{transform:translateY(0) scale(1);opacity:1}
+      .toast-icon{flex:0 0 48px;width:48px;height:48px;border-radius:50%;display:block}
+      .toast-text{font-weight:700;color:#0f172a;font-size:1rem}
+      @media (max-width:900px){.page{flex-direction:column}.sidebar{width:100%}.card img{height:200px}}
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="brand">
+          <div class="logo">SS</div>
+          <div>
+            <div class="name">Smart Scale</div>
+            <div class="sub">Интеллектуальное распознавание продуктов</div>
+          </div>
+        </div>
+      </div>
+      <div class="page">
+        <main class="main">
+          <div class="panel form">
+            <form id="predictForm">
+              <div class="field">
+                <label>Фото (из телефона/камеры):</label>
+                <div class="file-picker" id="filePicker" role="button" tabindex="0">
+                  <input type="file" id="imageInput" name="image" accept="image/*" required style="display:none" />
+                  <div class="fp-inner">
+                    <div class="fp-preview" id="preview" aria-hidden="true">
+                      <img id="previewImg" src="" alt="" style="display:none" />
+                    </div>
+                    <div class="fp-text" id="fpText">
+                      <div class="fp-title">Выберите изображение или перетащите сюда</div>
+                      <div class="fp-sub">jpg, png • макс 10 MB</div>
+                      <div style="margin-top:8px">
+                        <button type="button" id="browseBtn" class="browse-btn">Выбрать файл</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="field">
+                <label>Вес (граммы):</label>
+                <input type="number" id="weightInput" name="weight_grams" value="100" min="0" step="0.01" required />
+              </div>
+              <div class="field">
+                <label>Количество совпадений:</label>
+                <input type="number" id="topkInput" name="top_k" value="3" min="1" max="10" />
+              </div>
+              <div style="margin-top:12px">
+                <button type="submit">Отправить и распознать</button>
+              </div>
+            </form>
+
+            <div id="status"></div>
+          </div>
+        </main>
+
+        <aside class="sidebar">
+          <div id="results" class="results-card" style="display:none">
+            <h3>Топ совпадений</h3>
+            <div id="matches" class="matches"></div>
+            <div style="margin-top:12px">
+              <button id="notMatchBtn" style="display:none">Не тот товар</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div id="selectionToast" class="selection-toast" style="display:none" aria-hidden="true">
+      <div class="selection-card" role="status" aria-live="polite">
+        <svg class="toast-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" fill="var(--success)"/>
+          <path d="M7.5 12.5l2.5 2.5L16.5 9" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="toast-text">Товар добавлен в корзину</div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById('predictForm');
+      const matchesEl = document.getElementById('matches');
+      const statusEl = document.getElementById('status');
+      const notMatchBtn = document.getElementById('notMatchBtn');
+      // file picker elements & preview
+      const filePicker = document.getElementById('filePicker');
+      const fileInput = document.getElementById('imageInput');
+      const browseBtn = document.getElementById('browseBtn');
+      const previewImg = document.getElementById('previewImg');
+      const fpTitle = document.querySelector('.fp-title');
+
+      if (browseBtn) browseBtn.addEventListener('click', (e) => { e.preventDefault(); fileInput.click(); });
+      if (filePicker) {
+        filePicker.addEventListener('click', (e) => { if (e.target === filePicker) fileInput.click(); });
+        filePicker.addEventListener('dragover', (e) => { e.preventDefault(); filePicker.classList.add('dragover'); });
+        filePicker.addEventListener('dragleave', (e) => { e.preventDefault(); filePicker.classList.remove('dragover'); });
+        filePicker.addEventListener('drop', (e) => {
+          e.preventDefault(); filePicker.classList.remove('dragover');
+          const files = e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : null;
+          if (files && files[0]) {
+            const f = files[0];
+            const dt = new DataTransfer(); dt.items.add(f); fileInput.files = dt.files;
+            handleFile(f);
+          }
+        });
+      }
+      if (fileInput) fileInput.addEventListener('change', () => { if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+      function handleFile(file) {
+        const maxMB = 10;
+        if (file.size > maxMB * 1024 * 1024) { statusEl.textContent = 'Файл слишком большой (макс 10 MB)'; return; }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          if (previewImg) { previewImg.src = ev.target.result; previewImg.style.display = 'block'; }
+          if (fpTitle) fpTitle.textContent = file.name;
+        };
+        reader.readAsDataURL(file);
+      }
+
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        matchesEl.innerHTML = '';
+        statusEl.textContent = 'Загружаем и выполняем предсказание...';
+        // hide previous results until new ones arrive
+        document.getElementById('results').style.display = 'none';
+        notMatchBtn.style.display = 'none';
+
+        const weight = document.getElementById('weightInput').value;
+        const topk = document.getElementById('topkInput').value || 3;
+
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+          statusEl.textContent = 'Выберите изображение.';
+          return;
+        }
+
+        const fd = new FormData();
+        fd.append('image', fileInput.files[0]);
+        fd.append('weight_grams', weight);
+        fd.append('top_k', topk);
+
+        try {
+          const res = await fetch('/api/predict', { method: 'POST', body: fd });
+          if (!res.ok) {
+            const txt = await res.text();
+            statusEl.textContent = 'Ошибка сервера: ' + res.status + ' ' + txt;
+            return;
+          }
+          const data = await res.json();
+          // suppress a noisy backend message "Товар распознан." — show other messages or fallback to 'Готово'
+          const backendMsg = data && data.message ? String(data.message).trim() : '';
+          if (backendMsg && backendMsg !== 'Товар распознан.' && backendMsg !== 'Товар распознан') {
+            statusEl.textContent = backendMsg;
+          } else {
+            statusEl.textContent = 'Готово';
+          }
+          renderMatches(data.top_matches || []);
+        } catch (err) {
+          statusEl.textContent = 'Ошибка: ' + err;
+        }
+      });
+
+      function renderMatches(matches) {
+        matchesEl.innerHTML = '';
+        document.getElementById('results').style.display = 'block';
+        if (!matches || matches.length === 0) {
+          matchesEl.textContent = 'Совпадений не найдено.';
+          // show "not match" as an option even if no matches
+          notMatchBtn.style.display = 'inline-block';
+          return;
+        }
+
+        for (const m of matches) {
+          const card = document.createElement('div');
+          card.className = 'card';
+
+          const title = document.createElement('div');
+          title.className = 'title';
+          title.textContent = m.name || m.product_id || '—';
+          card.appendChild(title);
+
+          const img = document.createElement('img');
+          // metadata.path is expected from /api/predict
+          let imgPath = null;
+          if (m.metadata && m.metadata.path) imgPath = m.metadata.path;
+          else if (m.metadata && m.metadata.filename) imgPath = m.metadata.filename;
+
+          if (imgPath) {
+            // normalize backslashes to forward slashes for URL safety and add cache-busting
+            const safePath = imgPath.replace(/\\/g, '/');
+            img.src = '/api/serve_image?p=' + encodeURIComponent(safePath) + '&_t=' + Date.now();
+            img.onerror = () => {
+              img.alt = 'Изображение недоступно';
+              img.style.opacity = '0.6';
+              img.src = '';
+            };
+          } else {
+            img.alt = 'Изображение недоступно';
+          }
+          card.appendChild(img);
+
+          const score = document.createElement('div');
+          score.className = 'score';
+          score.textContent = 'score: ' + (m.score ? m.score.toFixed(3) : '—');
+          card.appendChild(score);
+
+          // make whole card clickable to select the product
+          card.addEventListener('click', () => selectMatch(m.product_id));
+
+          matchesEl.appendChild(card);
+        }
+
+        // show "not match" after results are rendered
+        notMatchBtn.style.display = 'inline-block';
+      }
+
+      async function selectMatch(productId) {
+        try {
+          const res = await fetch('/api/selection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selected: productId }) });
+          const json = await res.json();
+          // hide match cards and show confirmation overlay
+          matchesEl.innerHTML = '';
+          document.getElementById('results').style.display = 'none';
+          notMatchBtn.style.display = 'none';
+          showSelectionToast('Товар добавлен в корзину');
+        } catch (err) {
+          statusEl.textContent = 'Ошибка при выборе: ' + err;
+        }
+      }
+
+      let selectionToastTimeout = null;
+      function hideSelectionToast() {
+        const toast = document.getElementById('selectionToast');
+        if (!toast) return;
+        if (selectionToastTimeout) { clearTimeout(selectionToastTimeout); selectionToastTimeout = null; }
+        toast.classList.remove('show');
+        toast.setAttribute('aria-hidden', 'true');
+        setTimeout(() => { toast.style.display = 'none'; }, 260);
+      }
+
+      function showSelectionToast(message) {
+        const toast = document.getElementById('selectionToast');
+        if (!toast) return;
+        const text = toast.querySelector('.toast-text');
+        if (text) text.textContent = message;
+        toast.style.display = 'flex';
+        toast.setAttribute('aria-hidden', 'false');
+        // trigger animation
+        requestAnimationFrame(() => toast.classList.add('show'));
+        // attach click-to-dismiss handler once
+        if (!toast.__dismissInitialized) {
+          toast.addEventListener('click', hideSelectionToast);
+          toast.__dismissInitialized = true;
+        }
+        // auto-hide after 2.2s, keep reference so we can clear it on click
+        selectionToastTimeout = setTimeout(() => {
+          hideSelectionToast();
+        }, 2200);
+      }
+
+      notMatchBtn.addEventListener('click', async () => {
+        try {
+          const res = await fetch('/api/selection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selected: 'none' }) });
+          const json = await res.json();
+          statusEl.textContent = 'Отмечено как "не тот товар".';
+        } catch (err) {
+          statusEl.textContent = 'Ошибка при отправке: ' + err;
+        }
+      });
+    </script>
+  </body>
+</html>
