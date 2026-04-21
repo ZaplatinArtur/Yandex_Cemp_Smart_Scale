@@ -34,6 +34,7 @@ class RecognitionPipeline:
         embedder = DinoV2Embedder(
             checkpoint_path=settings.model_checkpoint,
             onnx_model_path=settings.onnx_model,
+            model_name=settings.embedding_model_name,
             embedding_dim=settings.embedding_dim,
         )
         hand_detector = HandAnomalyDetector(
@@ -204,13 +205,6 @@ class RecognitionPipeline:
             raise RuntimeError(
                 "YOLO-локализатор не готов."
                 + (f" Причина: {self.localizer.failure_reason}" if self.localizer.failure_reason else "")
-            )
-
-        embedder_assets_exist = self.settings.onnx_model.exists() or self.settings.model_checkpoint.exists()
-        if not embedder_assets_exist:
-            raise RuntimeError(
-                "Не найден ни один артефакт эмбеддера."
-                f" Ожидались {self.settings.onnx_model} или {self.settings.model_checkpoint}."
             )
 
         if self.settings.vector_backend == "pgvector" and not self.settings.pgvector_dsn:

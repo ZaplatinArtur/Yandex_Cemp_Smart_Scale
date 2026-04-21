@@ -297,7 +297,7 @@ curl.exe -X POST `
     "detector_name": "yolo11n-seg.pt",
     "mask_applied": true
   },
-  "embedding_dim": 256,
+  "embedding_dim": 384,
   "pipeline_steps": [
     "weight_received",
     "anomaly_check_started",
@@ -339,11 +339,13 @@ docker compose -f docker-compose.tests.yml up --build --abort-on-container-exit 
 - `SMART_SCALE_API_PORT`
 - `SMART_SCALE_TOP_K`
 - `SMART_SCALE_PRICE_PRECISION`
+- `SMART_SCALE_EMBEDDING_MODEL_NAME`
+- `SMART_SCALE_EMBEDDING_DIM`
 
 Пути до моделей:
 
-- `SMART_SCALE_MODEL_PATH`
-- `SMART_SCALE_ONNX_PATH`
+- `SMART_SCALE_MODEL_PATH` (опционально, для legacy fine-tuned checkpoint)
+- `SMART_SCALE_ONNX_PATH` (опционально, для legacy fine-tuned ONNX)
 - `SMART_SCALE_DETECTION_MODEL`
 - `SMART_SCALE_HAND_LANDMARKER_PATH`
 
@@ -381,7 +383,7 @@ smart-scale-api
 ## Отладка
 
 - Если `smart-scale-bootstrap` падает с ошибкой по БД, сначала проверь `docker exec smart-scale-pgvector pg_isready -U smart_scale -d smart_scale`.
-- Если сервис не стартует, проверь наличие моделей в `assets/models/`.
+- Если сервис не стартует на этапе embedder, проверь доступность `facebook/dinov2-small` в Hugging Face cache или сети.
 - Если `catalog_items=0`, значит БД не заполнена или указан не тот `SMART_SCALE_PGVECTOR_DSN`.
 - Если при первом старте embedder тянет Hugging Face cache, это ожидаемо: `AutoImageProcessor` для `facebook/dinov2-small` может скачать служебные файлы в кэш.
 - Если порт `8000` занят, задай другой через `SMART_SCALE_API_PORT`.

@@ -31,7 +31,7 @@ Entry points:
 
 - `anomaly.py` — MediaPipe Hands.
 - `detection.py` — YOLO/localization и crop.
-- `embedding.py` — DINOv2 + projection head / ONNX runtime.
+- `embedding.py` — vanilla DINOv2 CLS embeddings.
 - `vector_store.py` — `FaissVectorStore`, `PgVectorStore`, `CatalogIndexBuilder`.
 - `pipeline.py` — оркестрация этапов инференса.
 

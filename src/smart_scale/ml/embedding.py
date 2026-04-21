@@ -11,18 +11,30 @@ try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
-    from torchvision import transforms
     from transformers import AutoImageProcessor, AutoModel
 except ImportError:  # pragma: no cover - optional runtime deps
     torch = None
     nn = None
     F = None
-    transforms = None
     AutoImageProcessor = None
     AutoModel = None
 
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
+
+class DinoV2BackboneEmbedder(nn.Module if nn is not None else object):
+    def __init__(self, model_name: str = "facebook/dinov2-small") -> None:
+        if nn is None or AutoModel is None or F is None:
+            raise RuntimeError("PyTorch/Transformers dependencies are not installed.")
+
+        super().__init__()
+        self.backbone = AutoModel.from_pretrained(model_name)
+
+    def forward(self, pixel_values: Any) -> Any:
+        outputs = self.backbone(pixel_values=pixel_values)
+        cls_token = outputs.last_hidden_state[:, 0, :]
+        return F.normalize(cls_token, p=2, dim=1)
 
 
 class ProjectionHeadEmbedder(nn.Module if nn is not None else object):
@@ -54,17 +66,19 @@ class ProjectionHeadEmbedder(nn.Module if nn is not None else object):
 
 
 class DinoV2Embedder:
-    """Lazy wrapper around the fine-tuned DINOv2 checkpoint used in the project."""
+    """Lazy wrapper around vanilla DINOv2 image embeddings."""
 
     def __init__(
         self,
-        checkpoint_path: str | Path,
+        checkpoint_path: str | Path | None = None,
         onnx_model_path: str | Path | None = None,
+        model_name: str = "facebook/dinov2-small",
         device: str = "auto",
-        embedding_dim: int = 256,
+        embedding_dim: int = 384,
     ) -> None:
-        self.checkpoint_path = Path(checkpoint_path)
+        self.checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
         self.onnx_model_path = Path(onnx_model_path) if onnx_model_path else None
+        self.model_name = model_name
         self.device = self._resolve_device(device)
         self.embedding_dim = embedding_dim
 
@@ -124,19 +138,14 @@ class DinoV2Embedder:
         if self._initialized:
             return
 
-        if AutoImageProcessor is None or transforms is None:
-            raise RuntimeError("Transformers/Torchvision dependencies are not installed.")
+        if AutoImageProcessor is None:
+            raise RuntimeError("Transformers dependencies are not installed.")
 
         checkpoint = self._load_checkpoint()
-        backbone_name = checkpoint.get("backbone_name", "facebook/dinov2-small")
+        backbone_name = checkpoint.get("backbone_name", self.model_name)
         self.embedding_dim = int(checkpoint.get("embedding_dim", self.embedding_dim))
         self._processor = AutoImageProcessor.from_pretrained(backbone_name)
-        self._preprocess = transforms.Compose(
-            [
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-            ]
-        )
+        self._preprocess = None
 
         if self._try_load_onnx():
             self._initialized = True
@@ -155,6 +164,10 @@ class DinoV2Embedder:
         return "cpu"
 
     def _load_checkpoint(self) -> dict[str, Any]:
+        if self.checkpoint_path is None:
+            self._checkpoint = {}
+            return self._checkpoint
+
         if not self.checkpoint_path.exists() or self.checkpoint_path.suffix.lower() == ".onnx":
             self._checkpoint = {}
             if self.checkpoint_path.suffix.lower() == ".onnx" and self.onnx_model_path is None:
@@ -193,8 +206,15 @@ class DinoV2Embedder:
         if torch is None:
             raise RuntimeError("PyTorch is required for model inference.")
 
-        model = ProjectionHeadEmbedder(backbone_name=backbone_name, embedding_dim=self.embedding_dim)
         checkpoint = self._checkpoint
+        if not checkpoint:
+            model = DinoV2BackboneEmbedder(model_name=backbone_name)
+            model.to(self.device)
+            model.eval()
+            self._model = model
+            return
+
+        model = ProjectionHeadEmbedder(backbone_name=backbone_name, embedding_dim=self.embedding_dim)
 
         if "state_dict" in checkpoint:
             model.load_state_dict(checkpoint["state_dict"], strict=False)
@@ -220,6 +240,8 @@ class DinoV2Embedder:
         else:
             image = image.convert("RGB")
 
+        if self._preprocess is None:
+            return image
         return self._preprocess(image)
 
     def _embed_onnx(self, image: Image.Image) -> np.ndarray:

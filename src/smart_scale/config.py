@@ -24,6 +24,15 @@ def _as_path(value: str | None, default: Path) -> Path:
     return path
 
 
+def _as_optional_path(value: str | None) -> Path | None:
+    if not value:
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path
+
+
 @dataclass(frozen=True)
 class Settings:
     project_root: Path
@@ -31,8 +40,9 @@ class Settings:
     products_csv: Path
     dataset_dir: Path
     price_catalog_path: Path
-    model_checkpoint: Path
-    onnx_model: Path
+    model_checkpoint: Path | None
+    onnx_model: Path | None
+    embedding_model_name: str
     vector_db_path: Path
     file_vector_store_path: Path
     vector_backend: str
@@ -54,22 +64,16 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        # Resolve paths and prefer a quantized ONNX model when available.
-        # Priority:
-        # 1. SMART_SCALE_ONNX_QUANT_PATH (explicit env override)
-        # 2. sibling file next to default with suffix `_int8` (auto-detected)
-        # 3. SMART_SCALE_ONNX_PATH or default asset
+        # Embeddings use vanilla DINOv2 by default. Fine-tuned local artifacts are
+        # still accepted only when explicitly provided through environment vars.
         onnx_env = os.getenv("SMART_SCALE_ONNX_PATH")
-        onnx_default = _as_path(onnx_env, PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.onnx")
         quant_env = os.getenv("SMART_SCALE_ONNX_QUANT_PATH")
         if quant_env:
-            onnx_model_path = _as_path(quant_env, onnx_default)
+            onnx_model_path = _as_path(quant_env, PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.onnx")
+        elif onnx_env:
+            onnx_model_path = _as_path(onnx_env, PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.onnx")
         else:
-            cand = onnx_default.with_name(onnx_default.stem + "_int8" + onnx_default.suffix)
-            if cand.exists():
-                onnx_model_path = cand
-            else:
-                onnx_model_path = onnx_default
+            onnx_model_path = None
 
         # Resolve detection model and prefer a quantized version if available
         det_env = os.getenv("SMART_SCALE_DETECTION_MODEL")
@@ -96,11 +100,9 @@ class Settings:
                 os.getenv("SMART_SCALE_PRICE_CATALOG"),
                 PROJECT_ROOT / "data" / "product_prices.py",
             ),
-            model_checkpoint=_as_path(
-                os.getenv("SMART_SCALE_MODEL_PATH"),
-                PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.pth",
-            ),
+            model_checkpoint=_as_optional_path(os.getenv("SMART_SCALE_MODEL_PATH")),
             onnx_model=onnx_model_path,
+            embedding_model_name=os.getenv("SMART_SCALE_EMBEDDING_MODEL_NAME", "facebook/dinov2-small"),
             vector_db_path=_as_path(
                 os.getenv("SMART_SCALE_VECTOR_DB_PATH"),
                 PROJECT_ROOT / "data" / "vector_db" / "fruits.db",
@@ -127,7 +129,7 @@ class Settings:
             price_precision=int(os.getenv("SMART_SCALE_PRICE_PRECISION", "2")),
             build_index_on_startup=_as_bool(os.getenv("SMART_SCALE_BUILD_INDEX"), False),
             hand_detection_enabled=_as_bool(os.getenv("SMART_SCALE_HAND_DETECTION"), True),
-            embedding_dim=int(os.getenv("SMART_SCALE_EMBEDDING_DIM", "256")),
+            embedding_dim=int(os.getenv("SMART_SCALE_EMBEDDING_DIM", "384")),
             samples_per_sort=int(os.getenv("SMART_SCALE_SAMPLES_PER_SORT", "5")),
             weight_stability_tolerance=float(os.getenv("SMART_SCALE_WEIGHT_TOLERANCE", "2.0")),
             weight_stability_window=int(os.getenv("SMART_SCALE_WEIGHT_WINDOW", "5")),
