@@ -8,7 +8,7 @@ not available it attempts a generic `torch.jit` / `torch.onnx` export when the
 
 Usage:
   python scripts/convert_yolo_to_onnx.py \
-    --weights "C:\\Users\\artur\\Desktop\\Yandex_Cemp\\Yandex_Cemp_Smart_Scale\\assets\\models\\yolo11n-seg.pt" \
+    --weights assets/models/yolo11n-seg.pt \
     --out ./yolo.onnx --imgsz 640 --opset 16 --dynamic
 """
 
@@ -20,6 +20,9 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _find_new_onnx(before: set[str], search_dirs: list[Path]) -> Optional[Path]:
@@ -163,7 +166,7 @@ def export_with_torch(weights: Path, out: Path, imgsz: int, opset: int, dynamic:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert a YOLO .pt model to ONNX")
-    default_weights = r"C:\Users\artur\Desktop\Yandex_Cemp\Yandex_Cemp_Smart_Scale\assets\models\yolo11n-seg.pt"
+    default_weights = PROJECT_ROOT / "assets" / "models" / "yolo11n-seg.pt"
     parser.add_argument('--weights', '-w', default=default_weights, help='Path to .pt weights')
     parser.add_argument('--out', '-o', default=None, help='Output ONNX path')
     parser.add_argument('--imgsz', '-s', type=int, default=640, help='Image size (square)')

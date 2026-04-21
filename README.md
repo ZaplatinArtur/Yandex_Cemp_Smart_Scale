@@ -24,14 +24,12 @@
 - прайс-лист в [product_prices.py](data/product_prices.py)
 - модели в [assets/models](assets/models)
 
-Обязательные файлы моделей:
-- `assets/models/fruit_embedder_final.onnx`
-- `assets/models/fruit_embedder_final.onnx.data`
-- `assets/models/fruit_embedder_final.pth`
-- `assets/models/yolo11n-seg.pt`
+Минимум для runtime:
+- `assets/models/yolo_int8.onnx` или `assets/models/yolo.onnx`
 
-Опционально:
+Опциональные и сервисные артефакты:
 - `assets/models/hand_landmarker.task`
+- `assets/models/yolo11n-seg.pt` для повторного экспорта YOLO в ONNX
 
 Если `hand_landmarker.task` отсутствует, API всё равно запустится, но этап проверки рук будет работать в skip-режиме.
 
@@ -71,8 +69,8 @@
 - `SMART_SCALE_VECTOR_BACKEND=pgvector`
 - `SMART_SCALE_PGVECTOR_DSN=postgresql://smart_scale:smart_scale@localhost:5433/smart_scale`
 - `SMART_SCALE_PGVECTOR_TABLE=product_embeddings`
-- `SMART_SCALE_DATASET_DIR=D:\Yandex_Cemp_Smart_Scale\varieties_classification_dataset`
-- `SMART_SCALE_PRICE_CATALOG=D:\Yandex_Cemp_Smart_Scale\data\product_prices.py`
+- `SMART_SCALE_DATASET_DIR=<project>\varieties_classification_dataset`
+- `SMART_SCALE_PRICE_CATALOG=<project>\data\product_prices.py`
 - `SMART_SCALE_SAMPLES_PER_SORT=5`
 - `SMART_SCALE_API_HOST=0.0.0.0`
 - `SMART_SCALE_API_PORT=8000`
@@ -145,8 +143,8 @@ docker exec smart-scale-pgvector psql -U smart_scale -d smart_scale -c "SELECT C
 $env:SMART_SCALE_VECTOR_BACKEND = "pgvector"
 $env:SMART_SCALE_PGVECTOR_DSN = "postgresql://smart_scale:smart_scale@localhost:5433/smart_scale"
 $env:SMART_SCALE_PGVECTOR_TABLE = "product_embeddings"
-$env:SMART_SCALE_DATASET_DIR = "D:\Yandex_Cemp_Smart_Scale\varieties_classification_dataset"
-$env:SMART_SCALE_PRICE_CATALOG = "D:\Yandex_Cemp_Smart_Scale\data\product_prices.py"
+$env:SMART_SCALE_DATASET_DIR = "$PWD\varieties_classification_dataset"
+$env:SMART_SCALE_PRICE_CATALOG = "$PWD\data\product_prices.py"
 $env:SMART_SCALE_SAMPLES_PER_SORT = "5"
 ```
 
@@ -344,8 +342,6 @@ docker compose -f docker-compose.tests.yml up --build --abort-on-container-exit 
 
 Пути до моделей:
 
-- `SMART_SCALE_MODEL_PATH` (опционально, для legacy fine-tuned checkpoint)
-- `SMART_SCALE_ONNX_PATH` (опционально, для legacy fine-tuned ONNX)
 - `SMART_SCALE_DETECTION_MODEL`
 - `SMART_SCALE_HAND_LANDMARKER_PATH`
 
@@ -367,8 +363,8 @@ docker compose -f docker-compose.pgvector.yml up -d
 $env:SMART_SCALE_VECTOR_BACKEND = "pgvector"
 $env:SMART_SCALE_PGVECTOR_DSN = "postgresql://smart_scale:smart_scale@localhost:5433/smart_scale"
 $env:SMART_SCALE_PGVECTOR_TABLE = "product_embeddings"
-$env:SMART_SCALE_DATASET_DIR = "D:\Yandex_Cemp_Smart_Scale\varieties_classification_dataset"
-$env:SMART_SCALE_PRICE_CATALOG = "D:\Yandex_Cemp_Smart_Scale\data\product_prices.py"
+$env:SMART_SCALE_DATASET_DIR = "$PWD\varieties_classification_dataset"
+$env:SMART_SCALE_PRICE_CATALOG = "$PWD\data\product_prices.py"
 $env:SMART_SCALE_SAMPLES_PER_SORT = "5"
 $env:SMART_SCALE_BUILD_INDEX = "0"
 

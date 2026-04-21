@@ -33,8 +33,8 @@ postgresql://smart_scale:smart_scale@localhost:5433/smart_scale
 $env:SMART_SCALE_VECTOR_BACKEND = "pgvector"
 $env:SMART_SCALE_PGVECTOR_DSN = "postgresql://smart_scale:smart_scale@localhost:5433/smart_scale"
 $env:SMART_SCALE_PGVECTOR_TABLE = "product_embeddings"
-$env:SMART_SCALE_DATASET_DIR = "D:\Yandex_Cemp_Smart_Scale\varieties_classification_dataset"
-$env:SMART_SCALE_PRICE_CATALOG = "D:\Yandex_Cemp_Smart_Scale\data\product_prices.py"
+$env:SMART_SCALE_DATASET_DIR = "$PWD\varieties_classification_dataset"
+$env:SMART_SCALE_PRICE_CATALOG = "$PWD\data\product_prices.py"
 $env:SMART_SCALE_SAMPLES_PER_SORT = "5"
 ```
 

@@ -24,15 +24,6 @@ def _as_path(value: str | None, default: Path) -> Path:
     return path
 
 
-def _as_optional_path(value: str | None) -> Path | None:
-    if not value:
-        return None
-    path = Path(value)
-    if not path.is_absolute():
-        path = PROJECT_ROOT / path
-    return path
-
-
 @dataclass(frozen=True)
 class Settings:
     project_root: Path
@@ -40,8 +31,6 @@ class Settings:
     products_csv: Path
     dataset_dir: Path
     price_catalog_path: Path
-    model_checkpoint: Path | None
-    onnx_model: Path | None
     embedding_model_name: str
     vector_db_path: Path
     file_vector_store_path: Path
@@ -64,17 +53,6 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        # Embeddings use vanilla DINOv2 by default. Fine-tuned local artifacts are
-        # still accepted only when explicitly provided through environment vars.
-        onnx_env = os.getenv("SMART_SCALE_ONNX_PATH")
-        quant_env = os.getenv("SMART_SCALE_ONNX_QUANT_PATH")
-        if quant_env:
-            onnx_model_path = _as_path(quant_env, PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.onnx")
-        elif onnx_env:
-            onnx_model_path = _as_path(onnx_env, PROJECT_ROOT / "assets" / "models" / "fruit_embedder_final.onnx")
-        else:
-            onnx_model_path = None
-
         # Resolve detection model and prefer a quantized version if available
         det_env = os.getenv("SMART_SCALE_DETECTION_MODEL")
         det_default = _as_path(det_env, PROJECT_ROOT / "assets" / "models" / "yolo.onnx")
@@ -100,8 +78,6 @@ class Settings:
                 os.getenv("SMART_SCALE_PRICE_CATALOG"),
                 PROJECT_ROOT / "data" / "product_prices.py",
             ),
-            model_checkpoint=_as_optional_path(os.getenv("SMART_SCALE_MODEL_PATH")),
-            onnx_model=onnx_model_path,
             embedding_model_name=os.getenv("SMART_SCALE_EMBEDDING_MODEL_NAME", "facebook/dinov2-small"),
             vector_db_path=_as_path(
                 os.getenv("SMART_SCALE_VECTOR_DB_PATH"),

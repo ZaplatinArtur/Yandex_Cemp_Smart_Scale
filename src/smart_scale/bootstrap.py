@@ -12,8 +12,6 @@ def bootstrap_pgvector_catalog(settings: Settings | None = None) -> int:
         raise RuntimeError("Для bootstrap pgvector требуется SMART_SCALE_PGVECTOR_DSN.")
 
     embedder = DinoV2Embedder(
-        checkpoint_path=resolved_settings.model_checkpoint,
-        onnx_model_path=resolved_settings.onnx_model,
         model_name=resolved_settings.embedding_model_name,
         embedding_dim=resolved_settings.embedding_dim,
     )

@@ -181,7 +181,10 @@ cython_debug/
 .cursorindexingignore
 
 # Local project runtime data
+.runtime/
 .tmp/
 .tmp_tests/
 .tmp_tests_stale/
 varieties_classification_dataset/
+assets/models/*.bak
+assets/models/*.tmp

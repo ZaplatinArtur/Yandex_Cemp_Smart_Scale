@@ -37,59 +37,22 @@ class DinoV2BackboneEmbedder(nn.Module if nn is not None else object):
         return F.normalize(cls_token, p=2, dim=1)
 
 
-class ProjectionHeadEmbedder(nn.Module if nn is not None else object):
-    def __init__(
-        self,
-        backbone_name: str = "facebook/dinov2-small",
-        backbone_dim: int = 384,
-        embedding_dim: int = 256,
-    ) -> None:
-        if nn is None or AutoModel is None:
-            raise RuntimeError("PyTorch/Transformers dependencies are not installed.")
-
-        super().__init__()
-        self.backbone = AutoModel.from_pretrained(backbone_name)
-        self.head = nn.Sequential(
-            nn.Linear(backbone_dim, 512),
-            nn.BatchNorm1d(512),
-            nn.GELU(),
-            nn.Dropout(0.1),
-            nn.Linear(512, embedding_dim),
-            nn.BatchNorm1d(embedding_dim),
-        )
-
-    def forward(self, pixel_values: Any) -> Any:
-        outputs = self.backbone(pixel_values=pixel_values)
-        cls_token = outputs.last_hidden_state[:, 0, :]
-        embedding = self.head(cls_token)
-        return F.normalize(embedding, p=2, dim=1)
-
-
 class DinoV2Embedder:
     """Lazy wrapper around vanilla DINOv2 image embeddings."""
 
     def __init__(
         self,
-        checkpoint_path: str | Path | None = None,
-        onnx_model_path: str | Path | None = None,
         model_name: str = "facebook/dinov2-small",
         device: str = "auto",
         embedding_dim: int = 384,
     ) -> None:
-        self.checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
-        self.onnx_model_path = Path(onnx_model_path) if onnx_model_path else None
         self.model_name = model_name
         self.device = self._resolve_device(device)
         self.embedding_dim = embedding_dim
 
         self._initialized = False
-        self._use_onnx = False
-        self._checkpoint: dict[str, Any] = {}
         self._processor: Any = None
-        self._preprocess: Any = None
         self._model: Any = None
-        self._onnx_session: Any = None
-        self._onnx_input_name: str | None = None
 
     @property
     def is_ready(self) -> bool:
@@ -99,13 +62,11 @@ class DinoV2Embedder:
     def backend_name(self) -> str:
         if not self._initialized:
             return "uninitialized"
-        return "onnx" if self._use_onnx else "torch"
+        return "torch"
 
     def embed(self, image: str | Path | Image.Image | np.ndarray) -> np.ndarray:
         self._ensure_loaded()
         prepared = self._prepare_image(image)
-        if self._use_onnx:
-            return self._embed_onnx(prepared)
         return self._embed_torch(prepared)
 
     def warmup(self) -> None:
@@ -117,13 +78,6 @@ class DinoV2Embedder:
 
         for index in range(0, len(images), batch_size):
             chunk = [self._prepare_image(image) for image in images[index:index + batch_size]]
-            if self._use_onnx:
-                arrays = [self._processor(images=image, return_tensors="np")["pixel_values"].squeeze(0) for image in chunk]
-                batch = np.ascontiguousarray(np.stack(arrays).astype(np.float32))
-                outputs = self._onnx_session.run(None, {self._onnx_input_name: batch})[0]
-                batches.append(self._normalize(outputs))
-                continue
-
             tensors = [self._processor(images=image, return_tensors="pt")["pixel_values"].squeeze(0) for image in chunk]
             pixel_values = torch.stack(tensors).to(self.device)
             with torch.no_grad():
@@ -141,20 +95,9 @@ class DinoV2Embedder:
         if AutoImageProcessor is None:
             raise RuntimeError("Transformers dependencies are not installed.")
 
-        checkpoint = self._load_checkpoint()
-        backbone_name = checkpoint.get("backbone_name", self.model_name)
-        self.embedding_dim = int(checkpoint.get("embedding_dim", self.embedding_dim))
-        self._processor = AutoImageProcessor.from_pretrained(backbone_name)
-        self._preprocess = None
-
-        if self._try_load_onnx():
-            self._initialized = True
-            self._use_onnx = True
-            return
-
-        self._load_torch_model(backbone_name)
+        self._processor = AutoImageProcessor.from_pretrained(self.model_name)
+        self._load_torch_model()
         self._initialized = True
-        self._use_onnx = False
 
     def _resolve_device(self, device: str) -> str:
         if device != "auto":
@@ -163,71 +106,11 @@ class DinoV2Embedder:
             return "cuda"
         return "cpu"
 
-    def _load_checkpoint(self) -> dict[str, Any]:
-        if self.checkpoint_path is None:
-            self._checkpoint = {}
-            return self._checkpoint
-
-        if not self.checkpoint_path.exists() or self.checkpoint_path.suffix.lower() == ".onnx":
-            self._checkpoint = {}
-            if self.checkpoint_path.suffix.lower() == ".onnx" and self.onnx_model_path is None:
-                self.onnx_model_path = self.checkpoint_path
-            return self._checkpoint
-
-        if torch is None:
-            raise RuntimeError("PyTorch is required to load the checkpoint.")
-
-        try:
-            checkpoint = torch.load(self.checkpoint_path, map_location=self.device)
-        except TypeError:
-            checkpoint = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
-
-        self._checkpoint = checkpoint if isinstance(checkpoint, dict) else {}
-        return self._checkpoint
-
-    def _try_load_onnx(self) -> bool:
-        if self.onnx_model_path is None or not self.onnx_model_path.exists():
-            return False
-
-        try:
-            import onnxruntime as ort
-        except ImportError:
-            return False
-
-        providers = ["CPUExecutionProvider"]
-        if self.device == "cuda" and "CUDAExecutionProvider" in ort.get_available_providers():
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-
-        self._onnx_session = ort.InferenceSession(str(self.onnx_model_path), providers=providers)
-        self._onnx_input_name = self._onnx_session.get_inputs()[0].name
-        return True
-
-    def _load_torch_model(self, backbone_name: str) -> None:
+    def _load_torch_model(self) -> None:
         if torch is None:
             raise RuntimeError("PyTorch is required for model inference.")
 
-        checkpoint = self._checkpoint
-        if not checkpoint:
-            model = DinoV2BackboneEmbedder(model_name=backbone_name)
-            model.to(self.device)
-            model.eval()
-            self._model = model
-            return
-
-        model = ProjectionHeadEmbedder(backbone_name=backbone_name, embedding_dim=self.embedding_dim)
-
-        if "state_dict" in checkpoint:
-            model.load_state_dict(checkpoint["state_dict"], strict=False)
-        elif "model_state_dict" in checkpoint:
-            model.load_state_dict(checkpoint["model_state_dict"], strict=False)
-        elif any(isinstance(value, torch.Tensor) for value in checkpoint.values()):
-            model.load_state_dict(checkpoint, strict=False)
-
-        if "head_state_dict" in checkpoint:
-            model.head.load_state_dict(checkpoint["head_state_dict"], strict=False)
-        if "backbone_state_dict" in checkpoint:
-            model.backbone.load_state_dict(checkpoint["backbone_state_dict"], strict=False)
-
+        model = DinoV2BackboneEmbedder(model_name=self.model_name)
         model.to(self.device)
         model.eval()
         self._model = model
@@ -240,15 +123,7 @@ class DinoV2Embedder:
         else:
             image = image.convert("RGB")
 
-        if self._preprocess is None:
-            return image
-        return self._preprocess(image)
-
-    def _embed_onnx(self, image: Image.Image) -> np.ndarray:
-        inputs = self._processor(images=image, return_tensors="np")
-        pixel_values = np.ascontiguousarray(inputs["pixel_values"].astype(np.float32))
-        outputs = self._onnx_session.run(None, {self._onnx_input_name: pixel_values})[0]
-        return self._normalize(outputs).reshape(-1)
+        return image
 
     def _embed_torch(self, image: Image.Image) -> np.ndarray:
         inputs = self._processor(images=image, return_tensors="pt")

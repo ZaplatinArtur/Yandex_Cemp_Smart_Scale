@@ -44,7 +44,7 @@ class FakePipeline:
             "hand_detection_ready": False,
             "detection_model_ready": True,
             "detector_name": "fake_detector",
-            "embedding_backend": "onnx",
+            "embedding_backend": "torch",
         }
         self._warmup_error = warmup_error
         self._run_error = run_error
@@ -95,7 +95,7 @@ class APITests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(payload["warmup_completed"])
-        self.assertEqual(payload["embedding_backend"], "onnx")
+        self.assertEqual(payload["embedding_backend"], "torch")
 
     def test_predict_accepts_valid_multipart_request(self) -> None:
         pipeline = FakePipeline(result=_ok_result())

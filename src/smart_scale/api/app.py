@@ -51,8 +51,8 @@ def create_app(
             health.get("vector_backend"),
         )
         LOGGER.info(
-            "event=models_used onnx_model=%s detection_model=%s detector_name=%s embedding_backend=%s",
-            str(resolved_settings.onnx_model),
+            "event=models_used embedding_model=%s detection_model=%s detector_name=%s embedding_backend=%s",
+            resolved_settings.embedding_model_name,
             str(resolved_settings.detection_model_path),
             health.get("detector_name"),
             health.get("embedding_backend"),

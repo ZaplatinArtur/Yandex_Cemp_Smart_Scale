@@ -6,9 +6,9 @@ Supports two modes:
  - dynamic: fast weight-only dynamic quantization (no calibration)
  - static: full static quantization using a calibration dataset (requires --calib-data)
 
-This script NEVER overwrites the original model. It writes a new file next to
-the source (suffix `_int8`, `_int8_1`, etc.) and writes to a temporary file
-first. A lightweight backup `<model>.onnx.bak` is created if missing.
+This script never overwrites the original model unless --overwrite is provided.
+It writes a new file next to the source (suffix `_int8`, `_int8_1`, etc.) and
+writes to a temporary file first.
 
 Examples:
   python scripts/quantize_yolo.py -i assets/models/yolo.onnx
@@ -127,15 +127,6 @@ def main() -> None:
     weight_type = QuantType.QInt8 if args.weight_type == "qint8" else QuantType.QUInt8
 
     print(f"Quantizing ({args.mode}): {src} -> {dst}")
-
-    # backup
-    try:
-        backup = src.with_name(src.name + ".bak")
-        if not backup.exists():
-            print(f"Creating backup: {backup}")
-            shutil.copy2(src, backup)
-    except Exception as e:
-        print("Warning: failed to create backup:", e)
 
     tmp_out = dst.with_name(dst.name + ".tmp")
     if tmp_out.exists():

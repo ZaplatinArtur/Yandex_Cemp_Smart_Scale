@@ -32,8 +32,6 @@ class RecognitionPipeline:
     @classmethod
     def from_settings(cls, settings: Settings) -> "RecognitionPipeline":
         embedder = DinoV2Embedder(
-            checkpoint_path=settings.model_checkpoint,
-            onnx_model_path=settings.onnx_model,
             model_name=settings.embedding_model_name,
             embedding_dim=settings.embedding_dim,
         )
