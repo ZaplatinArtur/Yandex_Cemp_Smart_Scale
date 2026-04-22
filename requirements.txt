@@ -10,6 +10,7 @@ opencv-python
 mediapipe
 ultralytics
 transformers
+timm
 faiss-cpu
 psycopg[binary]
 pgvector

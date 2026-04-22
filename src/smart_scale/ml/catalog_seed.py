@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from PIL import Image
 
 
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -55,9 +56,10 @@ def load_price_catalog(source: str | Path | None) -> dict[str, float]:
 
 
 class PackEatCatalogSeeder:
-    def __init__(self, embedder: Any, store: Any) -> None:
+    def __init__(self, embedder: Any, store: Any, localizer: Any | None = None) -> None:
         self.embedder = embedder
         self.store = store
+        self.localizer = localizer
 
     def build(
         self,
@@ -132,7 +134,8 @@ class PackEatCatalogSeeder:
         for start in range(0, len(dataset_items), batch_size):
             chunk = dataset_items[start:start + batch_size]
             image_paths = [image_path for _, image_path, _ in chunk]
-            embeddings = self.embedder.embed_batch(image_paths, batch_size=min(batch_size, len(chunk)))
+            images = self._prepare_images(image_paths)
+            embeddings = self.embedder.embed_batch(images, batch_size=min(batch_size, len(chunk)))
             all_embeddings.append(np.asarray(embeddings, dtype=np.float32))
 
         ids = [product_id for product_id, _, _ in dataset_items]
@@ -177,6 +180,17 @@ class PackEatCatalogSeeder:
             if normalized in labels:
                 return normalized
         return None
+
+    def _prepare_images(self, image_paths: list[Path]) -> list[Path | Image.Image]:
+        if self.localizer is None:
+            return image_paths
+
+        prepared: list[Path | Image.Image] = []
+        for image_path in image_paths:
+            image = Image.open(image_path).convert("RGB")
+            crop = self.localizer.localize(image)
+            prepared.append(crop.image)
+        return prepared
 
 
 def _load_prices_from_csv(path: Path) -> dict[str, float]:

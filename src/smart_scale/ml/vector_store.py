@@ -202,7 +202,13 @@ class PgVectorStore:
 
     REQUIRED_COLUMNS = {"product_id", "embedding", "product_type", "product_sort", "price_rub_per_kg"}
 
-    def __init__(self, dsn: str, dim: int, table: str = "product_embeddings") -> None:
+    def __init__(
+        self,
+        dsn: str,
+        dim: int,
+        table: str = "product_embeddings",
+        recreate_on_dimension_mismatch: bool = False,
+    ) -> None:
         if psycopg is None:
             raise RuntimeError("psycopg не установлен.")
         if dim <= 0:
@@ -213,6 +219,7 @@ class PgVectorStore:
         self.dsn = dsn
         self.dim = dim
         self.table = table
+        self.recreate_on_dimension_mismatch = recreate_on_dimension_mismatch
         self._schema_ready = False
 
     def ensure_schema(self) -> None:
@@ -233,6 +240,19 @@ class PgVectorStore:
                 raise RuntimeError(
                     "Существующая таблица pgvector не может быть мигрирована автоматически. "
                     f"Отсутствуют обязательные колонки: {', '.join(sorted(missing_identity))}."
+                )
+
+            current_dim = self._fetch_embedding_dimension(cursor)
+            if current_dim is not None and current_dim != self.dim:
+                if self.recreate_on_dimension_mismatch:
+                    cursor.execute(f"DROP TABLE {self.table}")
+                    cursor.execute(self._create_table_sql())
+                    conn.commit()
+                    self._schema_ready = True
+                    return
+                raise RuntimeError(
+                    f"Existing pgvector table {self.table} uses vector({current_dim}), "
+                    f"but the current embedding model produces vector({self.dim})."
                 )
 
             for statement in self._migration_statements(columns):
@@ -295,6 +315,24 @@ class PgVectorStore:
             (self.table,),
         )
         return {str(row[0]) for row in cursor.fetchall()}
+
+    def _fetch_embedding_dimension(self, cursor: Any) -> int | None:
+        cursor.execute(
+            """
+            SELECT format_type(attribute.atttypid, attribute.atttypmod)
+            FROM pg_attribute AS attribute
+            WHERE attribute.attrelid = to_regclass(%s)
+              AND attribute.attname = 'embedding'
+              AND NOT attribute.attisdropped
+            """,
+            (self.table,),
+        )
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            return None
+
+        match = re.fullmatch(r"vector\((\d+)\)", str(row[0]))
+        return int(match.group(1)) if match else None
 
     def _migration_statements(self, columns: set[str]) -> list[str]:
         statements: list[str] = []

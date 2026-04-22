@@ -51,11 +51,13 @@ def create_app(
             health.get("vector_backend"),
         )
         LOGGER.info(
-            "event=models_used embedding_model=%s detection_model=%s detector_name=%s embedding_backend=%s",
+            "event=models_used embedding_model=%s embedding_checkpoint=%s detection_model=%s detector_name=%s embedding_backend=%s product_localization_enabled=%s",
             resolved_settings.embedding_model_name,
+            str(resolved_settings.embedding_checkpoint_path) if resolved_settings.embedding_checkpoint_path else None,
             str(resolved_settings.detection_model_path),
             health.get("detector_name"),
             health.get("embedding_backend"),
+            health.get("product_localization_enabled"),
         )
 
         try:

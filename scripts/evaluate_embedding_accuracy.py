@@ -26,6 +26,7 @@ from smart_scale.ml.vector_store import FileVectorStore
 class EvaluationMetrics:
     dataset_dir: str
     model_name: str
+    embedding_checkpoint: str | None
     embedding_dim: int
     yolo_enabled: bool
     detection_model: str | None
@@ -66,6 +67,7 @@ def main() -> None:
     metrics = evaluate_accuracy(
         dataset_dir=dataset_dir,
         model_name=settings.embedding_model_name,
+        checkpoint_path=settings.embedding_checkpoint_path,
         embedding_dim=settings.embedding_dim,
         batch_size=args.batch_size,
         top_k=args.top_k,
@@ -81,6 +83,7 @@ def main() -> None:
 
     print(f"dataset_dir: {metrics.dataset_dir}")
     print(f"model_name: {metrics.model_name}")
+    print(f"embedding_checkpoint: {metrics.embedding_checkpoint}")
     print(f"embedding_dim: {metrics.embedding_dim}")
     print(f"yolo_enabled: {metrics.yolo_enabled}")
     print(f"detection_model: {metrics.detection_model}")
@@ -100,6 +103,7 @@ def evaluate_accuracy(
     *,
     dataset_dir: Path,
     model_name: str,
+    checkpoint_path: Path | None,
     embedding_dim: int,
     batch_size: int,
     top_k: int,
@@ -122,6 +126,7 @@ def evaluate_accuracy(
 
     embedder = DinoV2Embedder(
         model_name=model_name,
+        checkpoint_path=checkpoint_path,
         embedding_dim=embedding_dim,
     )
     embedder.warmup()
@@ -173,6 +178,7 @@ def evaluate_accuracy(
     return EvaluationMetrics(
         dataset_dir=str(dataset_dir),
         model_name=model_name,
+        embedding_checkpoint=str(checkpoint_path) if checkpoint_path else None,
         embedding_dim=embedding_dim,
         yolo_enabled=use_yolo,
         detection_model=str(detection_model) if use_yolo else None,

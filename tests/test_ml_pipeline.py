@@ -12,7 +12,7 @@ try:
     import numpy as np
     from PIL import Image
 
-    from smart_scale.config import get_settings
+    from smart_scale.config import Settings, get_settings
     from smart_scale.domain import AnomalyCheckResult, CropResult, ProductMatch
     from smart_scale.ml.anomaly import HandAnomalyDetector
     from smart_scale.ml.catalog_seed import PackEatCatalogSeeder
@@ -23,6 +23,7 @@ try:
 except ImportError:  # pragma: no cover - environment-dependent
     np = None
     Image = None
+    Settings = None
     get_settings = None
     AnomalyCheckResult = None
     CropResult = None
@@ -41,6 +42,36 @@ class EmptyResultModel:
         class Boxes:
             def __len__(self) -> int:
                 return 0
+
+        class Result:
+            boxes = Boxes()
+            masks = None
+
+        return [Result()]
+
+
+class ArrayLike:
+    def __init__(self, values) -> None:
+        self.values = np.asarray(values, dtype=np.float32)
+
+    def detach(self):
+        return self
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        return self.values
+
+
+class BoxOnlyResultModel:
+    def predict(self, *_args, **_kwargs):
+        class Boxes:
+            conf = ArrayLike([0.42])
+            xyxy = ArrayLike([[2.0, 3.0, 6.0, 7.0]])
+
+            def __len__(self) -> int:
+                return 1
 
         class Result:
             boxes = Boxes()
@@ -86,6 +117,34 @@ class FakeEmbedder:
         return np.repeat(self.vector.reshape(1, -1), len(images), axis=0)
 
 
+class RecordingEmbedder(FakeEmbedder):
+    def __init__(self, vector: np.ndarray) -> None:
+        super().__init__(vector)
+        self.batch_image_sizes: list[tuple[int, int]] = []
+        self.batch_image_types: list[type] = []
+
+    def embed_batch(self, images, batch_size: int = 16) -> np.ndarray:
+        for image in images:
+            self.batch_image_types.append(type(image))
+            self.batch_image_sizes.append(image.size)
+        return super().embed_batch(images, batch_size=batch_size)
+
+
+class CroppingLocalizer:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def localize(self, image):
+        self.calls += 1
+        return CropResult(
+            image=image.crop((0, 0, 4, 4)),
+            bbox=(0, 0, 4, 4),
+            confidence=1.0,
+            detector_name="cropping_localizer",
+            mask_applied=True,
+        )
+
+
 class FailingBatchEmbedder(FakeEmbedder):
     def embed_batch(self, images, batch_size: int = 16) -> np.ndarray:
         _ = images
@@ -95,6 +154,37 @@ class FailingBatchEmbedder(FakeEmbedder):
 
 @unittest.skipIf(np is None or Image is None, "ML runtime test dependencies are not installed.")
 class MLRuntimeTests(unittest.TestCase):
+    def test_default_embedding_model_uses_custom_best_weights(self) -> None:
+        with patch.dict("os.environ", {"SMART_SCALE_EMBEDDING_CHECKPOINT": ""}, clear=True):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.embedding_checkpoint_path, None)
+        self.assertEqual(settings.embedding_dim, 384)
+        self.assertTrue(settings.product_localization_enabled)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            checkpoint_path = Path(tmp_dir) / "best.pt"
+            checkpoint_path.write_bytes(b"placeholder")
+            with patch.dict("os.environ", {"SMART_SCALE_EMBEDDING_CHECKPOINT": str(checkpoint_path)}, clear=True):
+                settings = Settings.from_env()
+
+        self.assertEqual(settings.embedding_checkpoint_path, checkpoint_path)
+        self.assertEqual(settings.embedding_dim, 256)
+        self.assertFalse(settings.product_localization_enabled)
+
+        with patch.dict("os.environ", {}, clear=True):
+            settings = Settings.from_env()
+
+        default_checkpoint_path = PROJECT_ROOT / "assets" / "models" / "best.pt"
+        if default_checkpoint_path.exists():
+            self.assertEqual(settings.embedding_checkpoint_path, default_checkpoint_path)
+            self.assertEqual(settings.embedding_dim, 256)
+            self.assertFalse(settings.product_localization_enabled)
+        else:
+            self.assertEqual(settings.embedding_checkpoint_path, None)
+            self.assertEqual(settings.embedding_dim, 384)
+            self.assertTrue(settings.product_localization_enabled)
+
     def test_hand_detector_skips_when_asset_is_missing(self) -> None:
         detector = HandAnomalyDetector(enabled=True, model_asset_path=PROJECT_ROOT / "assets" / "models" / "missing.task")
         image = Image.open(PROJECT_ROOT / "images" / "r0_10.jpg").convert("RGB")
@@ -113,6 +203,17 @@ class MLRuntimeTests(unittest.TestCase):
         self.assertEqual(result.bbox, (0, 0, image.size[0], image.size[1]))
         self.assertFalse(result.mask_applied)
         self.assertEqual(result.image.size, image.size)
+
+    def test_localizer_crops_bbox_when_detection_has_no_masks(self) -> None:
+        image = Image.open(PROJECT_ROOT / "images" / "r0_10.jpg").convert("RGB")
+        localizer = ProductLocalizer(model=BoxOnlyResultModel())
+
+        result = localizer.localize(image)
+
+        self.assertEqual(result.bbox, (2, 3, 6, 7))
+        self.assertFalse(result.mask_applied)
+        self.assertEqual(result.image.size, (4, 4))
+        self.assertAlmostEqual(result.confidence, 0.42, places=6)
 
     def test_normalize_keeps_expected_dimension_and_unit_norm(self) -> None:
         normalized = DinoV2Embedder._normalize(np.array([[3.0, 4.0, 0.0]], dtype=np.float32))
@@ -229,6 +330,34 @@ class MLRuntimeTests(unittest.TestCase):
         self.assertEqual([match.product_id for match in result.top_matches], ["apple_fuji", "banana_yellow"])
         self.assertAlmostEqual(result.total_price, 15.0)
 
+    def test_pipeline_skips_product_localization_when_disabled(self) -> None:
+        settings = replace(get_settings(), product_localization_enabled=False)
+        store = FileVectorStore(dim=3, snapshot_path=Path(tempfile.gettempdir()) / "catalog.pkl")
+        store.add_batch(
+            ids=["apple_fuji"],
+            embeddings=np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
+            metadata_list=[
+                {"product_type": "apple", "product_sort": "fuji", "price_rub_per_kg": 150.0},
+            ],
+        )
+        localizer = CroppingLocalizer()
+        pipeline = RecognitionPipeline(
+            settings=settings,
+            hand_detector=FakeHandDetector(blocked=False),
+            localizer=localizer,
+            embedder=FakeEmbedder(np.array([1.0, 0.0, 0.0], dtype=np.float32)),
+            vector_store=store,
+        )
+        pipeline._search_index_ready = True
+
+        result = pipeline.run(Image.open(PROJECT_ROOT / "images" / "r0_10.jpg").convert("RGB"), weight_grams=100.0)
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(localizer.calls, 0)
+        self.assertEqual(result.crop.detector_name, "full_frame")
+        self.assertEqual(result.crop.bbox, (0, 0, result.crop.image.size[0], result.crop.image.size[1]))
+        self.assertIn("localization_skipped", result.pipeline_steps)
+
     def test_packeat_catalog_seeder_uses_five_samples_per_sort(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             dataset_root = Path(tmp_dir) / "packeat"
@@ -255,6 +384,31 @@ class MLRuntimeTests(unittest.TestCase):
         self.assertEqual(store.count(), 10)
         self.assertEqual(sum(1 for meta in store.metadata if meta["product_type"] == "apple"), 5)
         self.assertEqual(sum(1 for meta in store.metadata if meta["product_type"] == "banana"), 5)
+
+    def test_packeat_catalog_seeder_applies_localizer_before_embedding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_root = Path(tmp_dir) / "packeat"
+            price_path = Path(tmp_dir) / "prices.py"
+            price_path.write_text("prices = {'apple_fuji': 175.0}", encoding="utf-8")
+
+            target_dir = dataset_root / "train" / "apple_fuji"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            for index in range(5):
+                image = Image.new("RGB", (8, 8), color=(255, 0, 0))
+                image.save(target_dir / f"apple_fuji_{index}.jpg")
+
+            store = FileVectorStore(dim=3, snapshot_path=Path(tmp_dir) / "catalog.pkl")
+            embedder = RecordingEmbedder(np.array([1.0, 0.0, 0.0], dtype=np.float32))
+            localizer = CroppingLocalizer()
+            seeder = PackEatCatalogSeeder(embedder, store, localizer=localizer)
+
+            indexed_items = seeder.build(dataset_root, price_path, samples_per_sort=5, batch_size=2)
+
+        self.assertEqual(indexed_items, 5)
+        self.assertEqual(localizer.calls, 5)
+        self.assertEqual(embedder.batch_image_sizes, [(4, 4)] * 5)
+        self.assertTrue(all(image_type is Image.Image for image_type in embedder.batch_image_types))
+        self.assertEqual(store.count(), 5)
 
     def test_packeat_catalog_seeder_keeps_existing_catalog_when_embedding_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -19,6 +19,14 @@ except ImportError:  # pragma: no cover - optional runtime deps
     AutoImageProcessor = None
     AutoModel = None
 
+try:
+    import timm
+    from timm.data import create_transform, resolve_model_data_config
+except ImportError:  # pragma: no cover - optional runtime deps
+    timm = None
+    create_transform = None
+    resolve_model_data_config = None
+
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
@@ -37,22 +45,72 @@ class DinoV2BackboneEmbedder(nn.Module if nn is not None else object):
         return F.normalize(cls_token, p=2, dim=1)
 
 
+class FineTunedTimmEmbedder(nn.Module if nn is not None else object):
+    def __init__(self, checkpoint_path: str | Path) -> None:
+        if torch is None or nn is None or F is None or timm is None:
+            raise RuntimeError("PyTorch and timm dependencies are required for checkpoint inference.")
+
+        super().__init__()
+        self.checkpoint_path = Path(checkpoint_path)
+        if not self.checkpoint_path.exists():
+            raise FileNotFoundError(self.checkpoint_path)
+
+        checkpoint = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
+        if not isinstance(checkpoint, dict) or "model" not in checkpoint:
+            raise RuntimeError(f"Unsupported embedding checkpoint format: {self.checkpoint_path}")
+
+        cfg = checkpoint.get("cfg") or {}
+        state_dict = checkpoint["model"]
+        self.model_name = str(cfg.get("timm_model", "vit_small_patch14_dinov2.lvd142m"))
+        self.embedding_dim = int(cfg.get("embed_dim", 256))
+        self.image_size = int(cfg.get("image_size", 224))
+
+        self.backbone = timm.create_model(
+            self.model_name,
+            pretrained=False,
+            num_classes=0,
+            img_size=self.image_size,
+        )
+        input_dim = int(getattr(self.backbone, "num_features", 0)) or int(state_dict["head.0.weight"].shape[1])
+        hidden_dim = int(state_dict["head.0.weight"].shape[0])
+        self.head = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, self.embedding_dim),
+        )
+
+        backbone_state = {
+            key.removeprefix("backbone."): value for key, value in state_dict.items() if key.startswith("backbone.")
+        }
+        head_state = {key.removeprefix("head."): value for key, value in state_dict.items() if key.startswith("head.")}
+        self.backbone.load_state_dict(backbone_state, strict=True)
+        self.head.load_state_dict(head_state, strict=True)
+
+    def forward(self, pixel_values: Any) -> Any:
+        features = self.backbone(pixel_values)
+        embeddings = self.head(features)
+        return F.normalize(embeddings, p=2, dim=1)
+
+
 class DinoV2Embedder:
     """Lazy wrapper around vanilla DINOv2 image embeddings."""
 
     def __init__(
         self,
         model_name: str = "facebook/dinov2-small",
+        checkpoint_path: str | Path | None = None,
         device: str = "auto",
         embedding_dim: int = 384,
     ) -> None:
         self.model_name = model_name
+        self.checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
         self.device = self._resolve_device(device)
         self.embedding_dim = embedding_dim
 
         self._initialized = False
         self._processor: Any = None
         self._model: Any = None
+        self._backend_name = "uninitialized"
 
     @property
     def is_ready(self) -> bool:
@@ -62,7 +120,7 @@ class DinoV2Embedder:
     def backend_name(self) -> str:
         if not self._initialized:
             return "uninitialized"
-        return "torch"
+        return self._backend_name
 
     def embed(self, image: str | Path | Image.Image | np.ndarray) -> np.ndarray:
         self._ensure_loaded()
@@ -78,7 +136,7 @@ class DinoV2Embedder:
 
         for index in range(0, len(images), batch_size):
             chunk = [self._prepare_image(image) for image in images[index:index + batch_size]]
-            tensors = [self._processor(images=image, return_tensors="pt")["pixel_values"].squeeze(0) for image in chunk]
+            tensors = [self._image_to_tensor(image) for image in chunk]
             pixel_values = torch.stack(tensors).to(self.device)
             with torch.no_grad():
                 outputs = self._model(pixel_values)
@@ -92,11 +150,14 @@ class DinoV2Embedder:
         if self._initialized:
             return
 
-        if AutoImageProcessor is None:
-            raise RuntimeError("Transformers dependencies are not installed.")
+        if self.checkpoint_path is not None:
+            self._load_checkpoint_model()
+        else:
+            if AutoImageProcessor is None:
+                raise RuntimeError("Transformers dependencies are not installed.")
 
-        self._processor = AutoImageProcessor.from_pretrained(self.model_name)
-        self._load_torch_model()
+            self._processor = AutoImageProcessor.from_pretrained(self.model_name)
+            self._load_torch_model()
         self._initialized = True
 
     def _resolve_device(self, device: str) -> str:
@@ -114,6 +175,27 @@ class DinoV2Embedder:
         model.to(self.device)
         model.eval()
         self._model = model
+        self._backend_name = "torch_transformers"
+
+    def _load_checkpoint_model(self) -> None:
+        if create_transform is None or resolve_model_data_config is None:
+            raise RuntimeError("timm is required for embedding checkpoint inference.")
+
+        model = FineTunedTimmEmbedder(self.checkpoint_path)
+        if model.embedding_dim != self.embedding_dim:
+            raise RuntimeError(
+                f"Embedding checkpoint produces {model.embedding_dim} dimensions, "
+                f"but SMART_SCALE_EMBEDDING_DIM is {self.embedding_dim}."
+            )
+
+        data_config = resolve_model_data_config(model.backbone)
+        data_config["input_size"] = (3, model.image_size, model.image_size)
+        self._processor = create_transform(**data_config, is_training=False)
+        model.to(self.device)
+        model.eval()
+        self._model = model
+        self.model_name = model.model_name
+        self._backend_name = f"timm_checkpoint:{self.checkpoint_path.name}"
 
     def _prepare_image(self, image: str | Path | Image.Image | np.ndarray) -> Image.Image:
         if isinstance(image, (str, Path)):
@@ -126,11 +208,15 @@ class DinoV2Embedder:
         return image
 
     def _embed_torch(self, image: Image.Image) -> np.ndarray:
-        inputs = self._processor(images=image, return_tensors="pt")
-        pixel_values = inputs["pixel_values"].to(self.device)
+        pixel_values = self._image_to_tensor(image).unsqueeze(0).to(self.device)
         with torch.no_grad():
             embedding = self._model(pixel_values)
         return embedding.detach().cpu().numpy().reshape(-1)
+
+    def _image_to_tensor(self, image: Image.Image) -> Any:
+        if self.checkpoint_path is not None:
+            return self._processor(image)
+        return self._processor(images=image, return_tensors="pt")["pixel_values"].squeeze(0)
 
     @staticmethod
     def _normalize(array: np.ndarray) -> np.ndarray:

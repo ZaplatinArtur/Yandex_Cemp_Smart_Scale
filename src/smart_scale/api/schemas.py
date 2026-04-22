@@ -45,6 +45,7 @@ class HealthResponse(BaseModel):
     warmup_completed: bool = False
     hand_detection_enabled: bool = False
     hand_detection_ready: bool = False
+    product_localization_enabled: bool = True
     detection_model_ready: bool = False
     detector_name: str | None = None
     embedding_backend: str | None = None

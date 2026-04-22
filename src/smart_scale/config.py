@@ -24,6 +24,16 @@ def _as_path(value: str | None, default: Path) -> Path:
     return path
 
 
+def _optional_path(value: str | None, default: Path | None = None) -> Path | None:
+    if value is not None:
+        if not value.strip():
+            return None
+        return _as_path(value, PROJECT_ROOT)
+    if default is None or not default.exists():
+        return None
+    return default
+
+
 @dataclass(frozen=True)
 class Settings:
     project_root: Path
@@ -32,6 +42,7 @@ class Settings:
     dataset_dir: Path
     price_catalog_path: Path
     embedding_model_name: str
+    embedding_checkpoint_path: Path | None
     vector_db_path: Path
     file_vector_store_path: Path
     vector_backend: str
@@ -46,6 +57,8 @@ class Settings:
     price_precision: int
     build_index_on_startup: bool
     hand_detection_enabled: bool
+    product_localization_enabled: bool
+    catalog_yolo_enabled: bool
     embedding_dim: int
     samples_per_sort: int
     weight_stability_tolerance: float
@@ -53,7 +66,14 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        # Resolve detection model and prefer a quantized version if available
+        embedding_checkpoint_path = _optional_path(
+            os.getenv("SMART_SCALE_EMBEDDING_CHECKPOINT"),
+            PROJECT_ROOT / "assets" / "models" / "best.pt",
+        )
+        default_embedding_dim = "256" if embedding_checkpoint_path else "384"
+        default_product_localization = embedding_checkpoint_path is None
+
+        # Resolve detection model and prefer a quantized version if available.
         det_env = os.getenv("SMART_SCALE_DETECTION_MODEL")
         det_default = _as_path(det_env, PROJECT_ROOT / "assets" / "models" / "yolo.onnx")
         det_quant_env = os.getenv("SMART_SCALE_DETECTION_QUANT_PATH")
@@ -79,6 +99,7 @@ class Settings:
                 PROJECT_ROOT / "data" / "product_prices.py",
             ),
             embedding_model_name=os.getenv("SMART_SCALE_EMBEDDING_MODEL_NAME", "facebook/dinov2-small"),
+            embedding_checkpoint_path=embedding_checkpoint_path,
             vector_db_path=_as_path(
                 os.getenv("SMART_SCALE_VECTOR_DB_PATH"),
                 PROJECT_ROOT / "data" / "vector_db" / "fruits.db",
@@ -105,7 +126,12 @@ class Settings:
             price_precision=int(os.getenv("SMART_SCALE_PRICE_PRECISION", "2")),
             build_index_on_startup=_as_bool(os.getenv("SMART_SCALE_BUILD_INDEX"), False),
             hand_detection_enabled=_as_bool(os.getenv("SMART_SCALE_HAND_DETECTION"), True),
-            embedding_dim=int(os.getenv("SMART_SCALE_EMBEDDING_DIM", "384")),
+            product_localization_enabled=_as_bool(
+                os.getenv("SMART_SCALE_PRODUCT_LOCALIZATION"),
+                default_product_localization,
+            ),
+            catalog_yolo_enabled=_as_bool(os.getenv("SMART_SCALE_CATALOG_YOLO"), False),
+            embedding_dim=int(os.getenv("SMART_SCALE_EMBEDDING_DIM", default_embedding_dim)),
             samples_per_sort=int(os.getenv("SMART_SCALE_SAMPLES_PER_SORT", "5")),
             weight_stability_tolerance=float(os.getenv("SMART_SCALE_WEIGHT_TOLERANCE", "2.0")),
             weight_stability_window=int(os.getenv("SMART_SCALE_WEIGHT_WINDOW", "5")),

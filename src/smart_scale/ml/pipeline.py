@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 from smart_scale.config import Settings
-from smart_scale.domain import ProductMatch, RecognitionResult
+from smart_scale.domain import CropResult, ProductMatch, RecognitionResult
 from smart_scale.ml.anomaly import HandAnomalyDetector
 from smart_scale.ml.catalog_seed import PackEatCatalogSeeder
 from smart_scale.ml.detection import ProductLocalizer
@@ -33,13 +35,19 @@ class RecognitionPipeline:
     def from_settings(cls, settings: Settings) -> "RecognitionPipeline":
         embedder = DinoV2Embedder(
             model_name=settings.embedding_model_name,
+            checkpoint_path=settings.embedding_checkpoint_path,
             embedding_dim=settings.embedding_dim,
         )
         hand_detector = HandAnomalyDetector(
             enabled=settings.hand_detection_enabled,
             model_asset_path=settings.hand_landmarker_path,
         )
-        localizer = ProductLocalizer(model_path=settings.detection_model_path)
+        localizer_model_path = (
+            settings.detection_model_path
+            if settings.product_localization_enabled or settings.catalog_yolo_enabled
+            else None
+        )
+        localizer = ProductLocalizer(model_path=localizer_model_path)
 
         if settings.vector_backend == "pgvector":
             if not settings.pgvector_dsn:
@@ -100,8 +108,12 @@ class RecognitionPipeline:
                 anomaly=anomaly,
             )
 
-        crop = self.localizer.localize(image)
-        steps.append("localization_completed")
+        if self.settings.product_localization_enabled:
+            crop = self.localizer.localize(image)
+            steps.append("localization_completed")
+        else:
+            crop = self._full_frame_crop(image)
+            steps.append("localization_skipped")
 
         embedding = self.embedder.embed(crop.image)
         steps.append("embedding_completed")
@@ -149,6 +161,7 @@ class RecognitionPipeline:
             "warmup_completed": self._warmup_completed,
             "hand_detection_enabled": self.settings.hand_detection_enabled,
             "hand_detection_ready": self.hand_detector.is_ready,
+            "product_localization_enabled": self.settings.product_localization_enabled,
             "detection_model_ready": self.localizer.is_ready,
             "detector_name": self.localizer.detector_name,
             "embedding_backend": self.embedder.backend_name,
@@ -184,7 +197,8 @@ class RecognitionPipeline:
         self._search_index_ready = indexed_items > 0
 
     def _bootstrap_pgvector_index(self) -> None:
-        builder = PackEatCatalogSeeder(self.embedder, self.vector_store)
+        localizer = self.localizer if self.settings.catalog_yolo_enabled else None
+        builder = PackEatCatalogSeeder(self.embedder, self.vector_store, localizer=localizer)
         indexed_items = builder.build(
             dataset_dir=self.settings.dataset_dir,
             price_source=self.settings.price_catalog_path,
@@ -199,7 +213,7 @@ class RecognitionPipeline:
         return self.settings.file_vector_store_path.exists()
 
     def _validate_runtime_components(self) -> None:
-        if not self.localizer.is_ready:
+        if self.settings.product_localization_enabled and not self.localizer.is_ready:
             raise RuntimeError(
                 "YOLO-локализатор не готов."
                 + (f" Причина: {self.localizer.failure_reason}" if self.localizer.failure_reason else "")
@@ -234,3 +248,15 @@ class RecognitionPipeline:
 
     def close(self) -> None:
         self.hand_detector.close()
+
+    @staticmethod
+    def _full_frame_crop(image: Image.Image) -> CropResult:
+        rgb_image = image.convert("RGB")
+        width, height = rgb_image.size
+        return CropResult(
+            image=rgb_image,
+            bbox=(0, 0, width, height),
+            confidence=1.0,
+            detector_name="full_frame",
+            mask_applied=False,
+        )

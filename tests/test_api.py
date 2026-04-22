@@ -42,6 +42,7 @@ class FakePipeline:
             "warmup_completed": True,
             "hand_detection_enabled": True,
             "hand_detection_ready": False,
+            "product_localization_enabled": False,
             "detection_model_ready": True,
             "detector_name": "fake_detector",
             "embedding_backend": "torch",

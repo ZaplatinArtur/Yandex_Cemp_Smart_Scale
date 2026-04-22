@@ -73,44 +73,22 @@ class ProductLocalizer:
         width, height = rgb_image.size
 
         if self._model is None:
-            return CropResult(
-                image=rgb_image,
-                bbox=(0, 0, width, height),
-                confidence=1.0,
-                detector_name=self._model_name,
-                mask_applied=False,
-            )
+            return self._full_frame(rgb_image, confidence=1.0)
 
         results = self._model.predict(np.asarray(rgb_image), conf=self.confidence_threshold, verbose=False)
         if not results:
-            return CropResult(
-                image=rgb_image,
-                bbox=(0, 0, width, height),
-                confidence=0.0,
-                detector_name=self._model_name,
-                mask_applied=False,
-            )
+            return self._full_frame(rgb_image, confidence=0.0)
 
         result = results[0]
         if result.boxes is None or len(result.boxes) == 0:
-            return CropResult(
-                image=rgb_image,
-                bbox=(0, 0, width, height),
-                confidence=0.0,
-                detector_name=self._model_name,
-                mask_applied=False,
-            )
+            return self._full_frame(rgb_image, confidence=0.0)
 
         scores = result.boxes.conf.detach().cpu().numpy()
         best_idx = int(scores.argmax())
+        confidence = float(scores[best_idx])
+        bbox = self._best_bbox(result.boxes, best_idx, width, height)
         if result.masks is None or len(result.masks.data) <= best_idx:
-            return CropResult(
-                image=rgb_image,
-                bbox=(0, 0, width, height),
-                confidence=float(scores[best_idx]),
-                detector_name=self._model_name,
-                mask_applied=False,
-            )
+            return self._crop_bbox(rgb_image, bbox=bbox, confidence=confidence)
 
         mask = result.masks.data[best_idx].detach().cpu().numpy()
         resized_mask = Image.fromarray(mask.astype(np.float32), mode="F").resize(rgb_image.size, Image.Resampling.NEAREST)
@@ -118,13 +96,7 @@ class ProductLocalizer:
 
         y_indices, x_indices = np.where(binary_mask)
         if len(y_indices) == 0 or len(x_indices) == 0:
-            return CropResult(
-                image=rgb_image,
-                bbox=(0, 0, width, height),
-                confidence=float(scores[best_idx]),
-                detector_name=self._model_name,
-                mask_applied=False,
-            )
+            return self._crop_bbox(rgb_image, bbox=bbox, confidence=confidence)
 
         rgb_array = np.asarray(rgb_image)
         isolated = np.zeros_like(rgb_array)
@@ -140,7 +112,56 @@ class ProductLocalizer:
         return CropResult(
             image=cropped,
             bbox=bbox,
-            confidence=float(scores[best_idx]),
+            confidence=confidence,
             detector_name=self._model_name,
             mask_applied=True,
+        )
+
+    def _best_bbox(self, boxes: Any, index: int, width: int, height: int) -> tuple[int, int, int, int] | None:
+        xyxy = getattr(boxes, "xyxy", None)
+        if xyxy is None:
+            return None
+
+        try:
+            raw_bbox = xyxy.detach().cpu().numpy()[index]
+        except Exception:
+            return None
+
+        x1, y1, x2, y2 = raw_bbox[:4]
+        clamped = (
+            max(0, min(width, int(round(float(x1))))),
+            max(0, min(height, int(round(float(y1))))),
+            max(0, min(width, int(round(float(x2))))),
+            max(0, min(height, int(round(float(y2))))),
+        )
+        if clamped[2] <= clamped[0] or clamped[3] <= clamped[1]:
+            return None
+        return clamped
+
+    def _crop_bbox(
+        self,
+        image: Image.Image,
+        *,
+        bbox: tuple[int, int, int, int] | None,
+        confidence: float,
+    ) -> CropResult:
+        if bbox is None:
+            return self._full_frame(image, confidence=confidence)
+
+        return CropResult(
+            image=image.crop(bbox),
+            bbox=bbox,
+            confidence=confidence,
+            detector_name=self._model_name,
+            mask_applied=False,
+        )
+
+    def _full_frame(self, image: Image.Image, *, confidence: float) -> CropResult:
+        width, height = image.size
+        return CropResult(
+            image=image,
+            bbox=(0, 0, width, height),
+            confidence=confidence,
+            detector_name=self._model_name,
+            mask_applied=False,
         )
