@@ -57,6 +57,7 @@ class FakePipeline:
         self._run_error = run_error
         self.warmup_called = False
         self.close_called = False
+        self.added_examples = []
 
     def warmup(self) -> None:
         self.warmup_called = True
@@ -70,6 +71,22 @@ class FakePipeline:
 
     def health_status(self) -> dict:
         return dict(self._health)
+
+    def add_catalog_example(self, image, **kwargs):
+        self.added_examples.append({"image_size": image.size, **kwargs})
+        return ProductMatch(
+            product_id=kwargs["product_id"],
+            product_type=kwargs["product_type"],
+            product_sort=kwargs["product_sort"],
+            score=1.0,
+            price_rub_per_kg=kwargs["price_rub_per_kg"],
+            metadata={
+                "product_type": kwargs["product_type"],
+                "product_sort": kwargs["product_sort"],
+                "price_rub_per_kg": kwargs["price_rub_per_kg"],
+                "path": str(kwargs.get("image_path")),
+            },
+        )
 
     def close(self) -> None:
         self.close_called = True
@@ -115,6 +132,8 @@ class APITests(unittest.TestCase):
         self.assertIn("Smart Scale", response.text)
         self.assertIn('id="topkInput" name="top_k" value="5" min="1" max="10"', response.text)
         self.assertIn("uniqueMatchesBySort", response.text)
+        self.assertIn('id="adminAddBtn"', response.text)
+        self.assertIn("/api/admin/catalog/examples", response.text)
         self.assertNotIn("product_id !== bestId", response.text)
 
     def test_catalog_varieties_merges_price_catalog_and_dataset(self) -> None:
@@ -350,6 +369,237 @@ class APITests(unittest.TestCase):
         self.assertTrue(metadata_exists)
         self.assertEqual(metadata["prediction_id"], predict_response.json()["prediction_id"])
         self.assertEqual(metadata["prediction"]["product"]["product_id"], "apple_fuji")
+
+    def test_admin_catalog_example_requires_valid_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            price_path = root / "prices.py"
+            price_path.write_text("prices = {'apple_fuji': 175.0}", encoding="utf-8")
+            dataset_dir = root / "dataset"
+            dataset_dir.mkdir()
+            settings = replace(
+                self.settings,
+                admin_token="secret",
+                price_catalog_path=price_path,
+                dataset_dir=dataset_dir,
+                prediction_history_dir=root / "predictions",
+            )
+            pipeline = FakePipeline(result=_ok_result(), settings=settings)
+            app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/admin/catalog/examples",
+                    data={
+                        "admin_token": "wrong",
+                        "product_type": "apple",
+                        "product_sort": "honey",
+                        "price_rub_per_kg": "212.50",
+                    },
+                    files={"image": ("sample.jpg", _image_bytes(), "image/jpeg")},
+                )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "Неверный пароль администратора")
+        self.assertEqual(pipeline.added_examples, [])
+
+    def test_admin_catalog_example_rejects_unconfigured_admin_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            price_path = root / "prices.py"
+            price_path.write_text("prices = {'apple_fuji': 175.0}", encoding="utf-8")
+            settings = replace(
+                self.settings,
+                admin_token=None,
+                price_catalog_path=price_path,
+                dataset_dir=root / "dataset",
+                prediction_history_dir=root / "predictions",
+            )
+            pipeline = FakePipeline(result=_ok_result(), settings=settings)
+            app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/admin/catalog/examples",
+                    data={
+                        "admin_token": "secret",
+                        "product_type": "apple",
+                        "product_sort": "honey",
+                        "price_rub_per_kg": "212.50",
+                    },
+                    files={"image": ("sample.jpg", _image_bytes(), "image/jpeg")},
+                )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "Пароль администратора не настроен")
+        self.assertEqual(pipeline.added_examples, [])
+
+    def test_admin_catalog_example_rejects_invalid_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            price_path = root / "prices.py"
+            price_path.write_text("prices = {'apple_fuji': 175.0}", encoding="utf-8")
+            settings = replace(
+                self.settings,
+                admin_token="secret",
+                price_catalog_path=price_path,
+                dataset_dir=root / "dataset",
+                prediction_history_dir=root / "predictions",
+            )
+            pipeline = FakePipeline(result=_ok_result(), settings=settings)
+            app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+            with TestClient(app) as client:
+                slug_response = client.post(
+                    "/api/admin/catalog/examples",
+                    data={
+                        "admin_token": "secret",
+                        "product_type": "apple pie",
+                        "product_sort": "honey",
+                        "price_rub_per_kg": "212.50",
+                    },
+                )
+                price_response = client.post(
+                    "/api/admin/catalog/examples",
+                    data={
+                        "admin_token": "secret",
+                        "product_type": "apple",
+                        "product_sort": "honey",
+                        "price_rub_per_kg": "0",
+                    },
+                )
+
+        self.assertEqual(slug_response.status_code, 400)
+        self.assertEqual(slug_response.json()["detail"], "Invalid product_type")
+        self.assertEqual(price_response.status_code, 400)
+        self.assertEqual(price_response.json()["detail"], "price_rub_per_kg must be greater than zero")
+        self.assertEqual(pipeline.added_examples, [])
+
+    def test_admin_catalog_example_adds_new_label_to_train_price_catalog_and_vector_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            price_path = root / "prices.py"
+            price_path.write_text("prices = {'apple_fuji': 175.0}", encoding="utf-8")
+            dataset_dir = root / "dataset"
+            (dataset_dir / "train").mkdir(parents=True)
+            (dataset_dir / "test").mkdir()
+            settings = replace(
+                self.settings,
+                admin_token="secret",
+                price_catalog_path=price_path,
+                dataset_dir=dataset_dir,
+                prediction_history_dir=root / "predictions",
+            )
+            pipeline = FakePipeline(result=_ok_result(), settings=settings)
+            app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/admin/catalog/examples",
+                    data={
+                        "admin_token": "secret",
+                        "product_type": "apple",
+                        "product_sort": "honey",
+                        "price_rub_per_kg": "212.50",
+                    },
+                    files={"image": ("sample.jpg", _image_bytes(), "image/jpeg")},
+                )
+
+            payload = response.json()
+            image_path = Path(payload["image_path"])
+            image_exists = image_path.exists()
+            image_parent = image_path.parent.resolve()
+            expected_parent = (dataset_dir / "train" / "apple_honey").resolve()
+            price_text = price_path.read_text(encoding="utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["label"], "apple_honey")
+        self.assertTrue(payload["catalog_updated"])
+        self.assertTrue(image_exists)
+        self.assertEqual(image_parent, expected_parent)
+        self.assertIn('"apple_honey": 212.50', price_text)
+        self.assertEqual(len(pipeline.added_examples), 1)
+        self.assertEqual(pipeline.added_examples[0]["product_id"], payload["product_id"])
+        self.assertEqual(pipeline.added_examples[0]["price_rub_per_kg"], 212.5)
+
+    def test_admin_catalog_example_rejects_existing_label_price_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            price_path = root / "prices.py"
+            price_path.write_text("prices = {'apple_fuji': 175.0}", encoding="utf-8")
+            dataset_dir = root / "dataset"
+            dataset_dir.mkdir()
+            settings = replace(
+                self.settings,
+                admin_token="secret",
+                price_catalog_path=price_path,
+                dataset_dir=dataset_dir,
+                prediction_history_dir=root / "predictions",
+            )
+            pipeline = FakePipeline(result=_ok_result(), settings=settings)
+            app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/admin/catalog/examples",
+                    data={
+                        "admin_token": "secret",
+                        "product_type": "apple",
+                        "product_sort": "fuji",
+                        "price_rub_per_kg": "199.00",
+                    },
+                    files={"image": ("sample.jpg", _image_bytes(), "image/jpeg")},
+                )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"], "Price for this product variety already exists and differs")
+        self.assertEqual(pipeline.added_examples, [])
+
+    def test_admin_catalog_example_can_use_stored_prediction_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            price_path = root / "prices.py"
+            price_path.write_text("prices = {'apple_fuji': 175.0}", encoding="utf-8")
+            train_dir = root / "train"
+            train_dir.mkdir()
+            settings = replace(
+                self.settings,
+                admin_token="secret",
+                price_catalog_path=price_path,
+                dataset_dir=train_dir,
+                prediction_history_dir=root / "predictions",
+            )
+            pipeline = FakePipeline(result=_ok_result(), settings=settings)
+            app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+            with TestClient(app) as client:
+                predict_response = client.post(
+                    "/api/predict",
+                    data={"weight_grams": "125.0"},
+                    files={"image": ("fruit.jpg", _image_bytes(), "image/jpeg")},
+                )
+                response = client.post(
+                    "/api/admin/catalog/examples",
+                    data={
+                        "admin_token": "secret",
+                        "product_type": "pear",
+                        "product_sort": "anjou",
+                        "price_rub_per_kg": "180.00",
+                        "prediction_id": predict_response.json()["prediction_id"],
+                    },
+                )
+
+            payload = response.json()
+            image_path = Path(payload["image_path"])
+            image_exists = image_path.exists()
+            image_parent = image_path.parent.resolve()
+            expected_parent = (train_dir / "pear_anjou").resolve()
+
+        self.assertEqual(predict_response.status_code, 200)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(image_exists)
+        self.assertEqual(image_parent, expected_parent)
+        self.assertEqual(pipeline.added_examples[0]["image_size"], (8, 8))
 
     def test_predict_rejects_empty_file(self) -> None:
         pipeline = FakePipeline(result=_ok_result())

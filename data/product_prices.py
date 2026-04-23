@@ -25,6 +25,7 @@ prices = {
     "grape_black": 229.00,
     "grape_green": 219.70,
     "grape_pink": 235.00,
+    "key_key": 77.60,
     "kiwi_kiwi": 241.00,
     "lemon_orange": 159.00,
     "lemon_yellow": 149.90,

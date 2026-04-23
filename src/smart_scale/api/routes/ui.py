@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import io
+import csv
 from datetime import datetime, timezone
 from pathlib import Path
+import hmac
 import json
 import mimetypes
 import os
@@ -12,6 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Query, Body, File, Form, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from PIL import Image, UnidentifiedImageError
@@ -208,6 +211,90 @@ async def record_incorrect_feedback(
     )
 
 
+@ui_router.post("/api/admin/catalog/examples")
+async def add_admin_catalog_example(
+    request: Request,
+    image: UploadFile | None = File(None),
+    admin_token: str = Form(...),
+    product_type: str = Form(...),
+    product_sort: str = Form(...),
+    price_rub_per_kg: float = Form(...),
+    prediction_id: str | None = Form(None),
+    pipeline: RecognitionPipeline = Depends(get_pipeline),
+) -> JSONResponse:
+    settings = pipeline.settings
+    _verify_admin_token(settings.admin_token, admin_token)
+
+    normalized_type = _normalize_slug(product_type, "product_type", r"[a-z0-9]+")
+    normalized_sort = _normalize_slug(product_sort, "product_sort", r"[a-z0-9_]+")
+    if price_rub_per_kg <= 0:
+        raise HTTPException(status_code=400, detail="price_rub_per_kg must be greater than zero")
+
+    label = normalize_catalog_label(f"{normalized_type}_{normalized_sort}")
+    catalog_prices = _load_price_items(settings.price_catalog_path)
+    existing_price = catalog_prices.get(label)
+    if existing_price is not None and abs(float(existing_price) - float(price_rub_per_kg)) > 0.005:
+        raise HTTPException(status_code=409, detail="Price for this product variety already exists and differs")
+
+    payload, original_filename, content_type = await _read_catalog_example_payload(
+        request,
+        image=image,
+        prediction_id=prediction_id,
+    )
+    pil_image = _load_rgb_image(payload, content_type=content_type)
+
+    train_dir = _resolve_train_dataset_dir(settings)
+    target_dir = train_dir / label
+    target_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    stem = f"{timestamp}_{uuid4().hex[:12]}"
+    image_path = target_dir / f"{stem}.jpg"
+    pil_image.save(image_path, format="JPEG", quality=95)
+
+    product_id = f"{label}:{stem}"
+    try:
+        match = await run_in_threadpool(
+            pipeline.add_catalog_example,
+            pil_image,
+            product_type=normalized_type,
+            product_sort=normalized_sort,
+            price_rub_per_kg=float(price_rub_per_kg),
+            product_id=product_id,
+            image_path=image_path,
+        )
+    except Exception as exc:
+        try:
+            image_path.unlink()
+        except OSError:
+            pass
+        raise HTTPException(status_code=503, detail="Failed to add catalog embedding") from exc
+
+    catalog_updated = existing_price is None
+    if catalog_updated:
+        _upsert_price_catalog(settings.price_catalog_path, label, float(price_rub_per_kg))
+
+    LOGGER.info(
+        "event=admin_catalog_example_added label=%s product_id=%s image_path=%s catalog_updated=%s original_filename=%s",
+        label,
+        match.product_id,
+        image_path,
+        catalog_updated,
+        original_filename,
+    )
+    return JSONResponse(
+        {
+            "status": "ok",
+            "label": label,
+            "product_id": match.product_id,
+            "product_type": normalized_type,
+            "product_sort": normalized_sort,
+            "price_rub_per_kg": float(price_rub_per_kg),
+            "image_path": str(image_path),
+            "catalog_updated": catalog_updated,
+        }
+    )
+
+
 @ui_router.get("/api/serve_image")
 async def serve_image(p: str = Query(...), pipeline: RecognitionPipeline = Depends(get_pipeline)) -> FileResponse:
     """Serve an image file from the catalog by absolute or relative path.
@@ -293,6 +380,111 @@ async def record_selection(selection: dict = Body(...), pipeline: RecognitionPip
     selected = selection.get("selected") if isinstance(selection, dict) else None
     # Placeholder: in future persist user feedback via pipeline or storage
     return JSONResponse({"status": "ok", "selected": selected})
+
+
+def _verify_admin_token(configured_token: str | None, provided_token: str) -> None:
+    if not configured_token:
+        raise HTTPException(status_code=403, detail="Пароль администратора не настроен")
+    if not hmac.compare_digest(str(configured_token), str(provided_token)):
+        raise HTTPException(status_code=403, detail="Неверный пароль администратора")
+
+
+def _normalize_slug(value: str, field_name: str, pattern: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if not re.fullmatch(pattern, normalized):
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+    return normalized
+
+
+async def _read_catalog_example_payload(
+    request: Request,
+    *,
+    image: UploadFile | None,
+    prediction_id: str | None,
+) -> tuple[bytes, str | None, str | None]:
+    if image is not None:
+        payload = await image.read()
+        original_filename = image.filename
+        content_type = image.content_type
+    elif prediction_id:
+        history = getattr(request.app.state, "prediction_history", None)
+        stored_record = history.get(prediction_id) if history is not None else None
+        if stored_record is None:
+            raise HTTPException(status_code=404, detail="Prediction image not found")
+
+        image_path = _resolve_history_file(stored_record.get("image_path"), history.storage_dir.resolve())
+        try:
+            payload = image_path.read_bytes()
+        except OSError as exc:
+            raise HTTPException(status_code=404, detail="Prediction image not found") from exc
+        original_filename = stored_record.get("original_filename")
+        content_type = stored_record.get("content_type")
+    else:
+        raise HTTPException(status_code=400, detail="Image or prediction_id is required")
+
+    if not payload:
+        raise HTTPException(status_code=400, detail="Image file is empty")
+    if content_type and not str(content_type).startswith("image/"):
+        raise HTTPException(status_code=400, detail="Expected image file")
+    return payload, original_filename, content_type
+
+
+def _load_rgb_image(payload: bytes, *, content_type: str | None) -> Image.Image:
+    if content_type and not str(content_type).startswith("image/"):
+        raise HTTPException(status_code=400, detail="Expected image file")
+    try:
+        return Image.open(io.BytesIO(payload)).convert("RGB")
+    except UnidentifiedImageError as exc:
+        raise HTTPException(status_code=400, detail="Could not recognize image") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail="Could not process image") from exc
+
+
+def _resolve_train_dataset_dir(settings) -> Path:
+    dataset_dir = settings.dataset_dir
+    if dataset_dir.name.lower() == "train":
+        return dataset_dir
+    if (dataset_dir / "train").exists() or (dataset_dir / "test").exists():
+        return dataset_dir / "train"
+    return dataset_dir
+
+
+def _upsert_price_catalog(path: Path, label: str, price_rub_per_kg: float) -> None:
+    prices = _load_price_items(path)
+    prices[normalize_catalog_label(label)] = float(price_rub_per_kg)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        payload = {key: prices[key] for key in sorted(prices)}
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return
+
+    if suffix == ".csv":
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["label", "price_rub_per_kg"])
+            writer.writeheader()
+            for key in sorted(prices):
+                writer.writerow({"label": key, "price_rub_per_kg": _format_price_literal(prices[key])})
+        return
+
+    if suffix in {"", ".py"}:
+        path.write_text(_format_python_price_catalog(prices), encoding="utf-8")
+        return
+
+    raise HTTPException(status_code=400, detail=f"Unsupported price catalog format: {path.suffix}")
+
+
+def _format_python_price_catalog(prices: dict[str, float]) -> str:
+    lines = ["prices = {"]
+    for label in sorted(prices):
+        lines.append(f'    "{label}": {_format_price_literal(prices[label])},')
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _format_price_literal(value: float) -> str:
+    return f"{float(value):.2f}"
 
 
 def _build_catalog_items(settings) -> list[dict[str, object]]:

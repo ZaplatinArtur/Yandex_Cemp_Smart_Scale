@@ -156,6 +156,51 @@ class RecognitionPipeline:
             pipeline_steps=steps,
         )
 
+    def add_catalog_example(
+        self,
+        image: Any,
+        *,
+        product_type: str,
+        product_sort: str,
+        price_rub_per_kg: float,
+        product_id: str,
+        image_path: str | Path | None = None,
+    ) -> ProductMatch:
+        if price_rub_per_kg <= 0:
+            raise ValueError("price_rub_per_kg must be greater than zero.")
+
+        rgb_image = image.convert("RGB") if hasattr(image, "convert") else Image.open(image).convert("RGB")
+        if self.settings.product_localization_enabled:
+            crop = self.localizer.localize(rgb_image)
+        else:
+            crop = self._full_frame_crop(rgb_image)
+
+        embedding = self.embedder.embed(crop.image)
+        metadata = {
+            "product_id": product_id,
+            "product_type": product_type,
+            "product_sort": product_sort,
+            "price_rub_per_kg": float(price_rub_per_kg),
+            "path": str(image_path) if image_path is not None else None,
+            "source_path": str(image_path) if image_path is not None else None,
+            "crop_bbox": crop.bbox,
+            "crop_confidence": crop.confidence,
+            "crop_detector_name": crop.detector_name,
+            "crop_mask_applied": crop.mask_applied,
+        }
+        self.vector_store.add_batch([product_id], embedding.reshape(1, -1), [metadata])
+        if self.settings.vector_backend != "pgvector" and hasattr(self.vector_store, "save"):
+            self.vector_store.save()
+        self._search_index_ready = True
+        return ProductMatch(
+            product_id=product_id,
+            product_type=product_type,
+            product_sort=product_sort,
+            score=1.0,
+            price_rub_per_kg=float(price_rub_per_kg),
+            metadata=metadata,
+        )
+
     def health_status(self) -> dict[str, Any]:
         return {
             "status": "ok",

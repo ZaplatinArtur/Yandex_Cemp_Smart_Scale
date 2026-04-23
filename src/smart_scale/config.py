@@ -55,6 +55,7 @@ class Settings:
     api_title: str
     api_host: str
     api_port: int
+    admin_token: str | None
     default_top_k: int
     price_precision: int
     build_index_on_startup: bool
@@ -132,6 +133,7 @@ class Settings:
             api_title=os.getenv("SMART_SCALE_API_TITLE", "Smart Scale API"),
             api_host=os.getenv("SMART_SCALE_API_HOST", "0.0.0.0"),
             api_port=int(os.getenv("SMART_SCALE_API_PORT", "8000")),
+            admin_token=os.getenv("SMART_SCALE_ADMIN_TOKEN", "1111"),
             default_top_k=int(os.getenv("SMART_SCALE_TOP_K", "3")),
             price_precision=int(os.getenv("SMART_SCALE_PRICE_PRECISION", "2")),
             build_index_on_startup=_as_bool(os.getenv("SMART_SCALE_BUILD_INDEX"), False),

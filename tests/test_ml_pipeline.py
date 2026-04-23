@@ -13,6 +13,7 @@ try:
     from PIL import Image
 
     from smart_scale.config import Settings, get_settings
+    from smart_scale.api.routes.ui import _resolve_train_dataset_dir
     from smart_scale.domain import AnomalyCheckResult, CropResult, ProductMatch
     from smart_scale.ml.anomaly import HandAnomalyDetector
     from smart_scale.ml.catalog_seed import PackEatCatalogSeeder
@@ -25,6 +26,7 @@ except ImportError:  # pragma: no cover - environment-dependent
     Image = None
     Settings = None
     get_settings = None
+    _resolve_train_dataset_dir = None
     AnomalyCheckResult = None
     CropResult = None
     ProductMatch = None
@@ -115,6 +117,18 @@ class FakeEmbedder:
     def embed_batch(self, images, batch_size: int = 16) -> np.ndarray:
         _ = batch_size
         return np.repeat(self.vector.reshape(1, -1), len(images), axis=0)
+
+
+class CountingEmbedder(FakeEmbedder):
+    def __init__(self, vector: np.ndarray) -> None:
+        super().__init__(vector)
+        self.embed_calls = 0
+        self.embed_image_sizes: list[tuple[int, int]] = []
+
+    def embed(self, image) -> np.ndarray:
+        self.embed_calls += 1
+        self.embed_image_sizes.append(image.size)
+        return super().embed(image)
 
 
 class RecordingEmbedder(FakeEmbedder):
@@ -385,6 +399,69 @@ class MLRuntimeTests(unittest.TestCase):
         self.assertEqual(result.crop.detector_name, "full_frame")
         self.assertEqual(result.crop.bbox, (0, 0, result.crop.image.size[0], result.crop.image.size[1]))
         self.assertIn("localization_skipped", result.pipeline_steps)
+
+    def test_pipeline_add_catalog_example_upserts_embedding_and_saves_local_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            snapshot = Path(tmp_dir) / "catalog.pkl"
+            settings = replace(get_settings(), vector_backend="file", product_localization_enabled=False)
+            store = FileVectorStore(dim=3, snapshot_path=snapshot)
+            embedder = CountingEmbedder(np.array([0.0, 1.0, 0.0], dtype=np.float32))
+            pipeline = RecognitionPipeline(
+                settings=settings,
+                hand_detector=FakeHandDetector(blocked=False),
+                localizer=FakeLocalizer(),
+                embedder=embedder,
+                vector_store=store,
+            )
+            image_path = Path(tmp_dir) / "apple_honey.jpg"
+            image = Image.new("RGB", (8, 8), color=(255, 0, 0))
+            image.save(image_path)
+
+            match = pipeline.add_catalog_example(
+                image,
+                product_type="apple",
+                product_sort="honey",
+                price_rub_per_kg=212.5,
+                product_id="apple_honey:admin",
+                image_path=image_path,
+            )
+
+            restored = FileVectorStore(dim=3, snapshot_path=snapshot)
+            restored.load()
+            snapshot_exists = snapshot.exists()
+
+        self.assertEqual(embedder.embed_calls, 1)
+        self.assertEqual(embedder.embed_image_sizes, [(8, 8)])
+        self.assertEqual(store.count(), 1)
+        self.assertTrue(snapshot_exists)
+        self.assertEqual(restored.count(), 1)
+        self.assertEqual(match.product_id, "apple_honey:admin")
+        self.assertEqual(store.metadata[0]["product_type"], "apple")
+        self.assertEqual(store.metadata[0]["product_sort"], "honey")
+        self.assertEqual(store.metadata[0]["price_rub_per_kg"], 212.5)
+
+    def test_resolve_train_dataset_dir_handles_root_and_direct_train_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            dataset_root = root / "dataset"
+            train_dir = dataset_root / "train"
+            train_dir.mkdir(parents=True)
+            (dataset_root / "test").mkdir()
+            direct_train = root / "direct" / "train"
+            direct_train.mkdir(parents=True)
+            plain_dataset = root / "plain"
+
+            root_settings = replace(get_settings(), dataset_dir=dataset_root)
+            direct_settings = replace(get_settings(), dataset_dir=direct_train)
+            plain_settings = replace(get_settings(), dataset_dir=plain_dataset)
+
+            resolved_root = _resolve_train_dataset_dir(root_settings)
+            resolved_direct = _resolve_train_dataset_dir(direct_settings)
+            resolved_plain = _resolve_train_dataset_dir(plain_settings)
+
+        self.assertEqual(resolved_root, train_dir)
+        self.assertEqual(resolved_direct, direct_train)
+        self.assertEqual(resolved_plain, plain_dataset)
 
     def test_packeat_catalog_seeder_uses_five_samples_per_sort(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

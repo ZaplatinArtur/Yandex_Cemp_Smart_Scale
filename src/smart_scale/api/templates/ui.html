@@ -85,7 +85,7 @@
         font-weight: 650;
         font-size: 0.92rem;
       }
-      input[type="number"], input[type="search"] {
+      input[type="number"], input[type="search"], input[type="text"], input[type="password"] {
         width: 100%;
         min-height: 38px;
         padding: 8px 10px;
@@ -158,6 +158,19 @@
         flex: 1 1 150px;
         min-width: 0;
       }
+      .admin-add {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+      }
+      .admin-add-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .admin-add .field { margin-bottom: 0; }
 
       .result-state {
         border-radius: 8px;
@@ -270,6 +283,7 @@
         body { padding: 14px; }
         .layout { grid-template-columns: 1fr; }
         .result-meta { grid-template-columns: 1fr; }
+        .admin-add-grid { grid-template-columns: 1fr; }
       }
     </style>
   </head>
@@ -343,7 +357,34 @@
             <div class="actions confirm-actions">
               <button type="button" class="btn-primary" id="confirmYesBtn">Да, это он</button>
               <button type="button" class="btn-danger" id="confirmNoBtn">Не тот продукт</button>
+              <button type="button" class="btn-ghost" id="adminAddBtn">Добавить новый продукт</button>
             </div>
+            <form id="adminAddForm" class="admin-add hidden">
+              <div class="field">
+                <label for="adminTokenInput">Пароль администратора</label>
+                <input type="password" id="adminTokenInput" autocomplete="current-password" required />
+              </div>
+              <div class="admin-add-grid">
+                <div class="field">
+                  <label for="adminProductTypeInput">Тип продукта</label>
+                  <input type="text" id="adminProductTypeInput" list="adminProductTypeOptions" placeholder="apple" pattern="[a-z0-9]+" required />
+                  <datalist id="adminProductTypeOptions"></datalist>
+                </div>
+                <div class="field">
+                  <label for="adminProductSortInput">Сорт</label>
+                  <input type="text" id="adminProductSortInput" list="adminProductSortOptions" placeholder="fuji" pattern="[a-z0-9_]+" required />
+                  <datalist id="adminProductSortOptions"></datalist>
+                </div>
+              </div>
+              <div class="field">
+                <label for="adminPriceInput">Цена за кг, ₽</label>
+                <input type="number" id="adminPriceInput" min="0.01" step="0.01" required />
+              </div>
+              <div class="actions">
+                <button type="submit" class="btn-primary" id="adminSubmitBtn">Сохранить в train и БД</button>
+                <button type="button" class="btn-secondary" id="adminCancelBtn">Отмена</button>
+              </div>
+            </form>
           </section>
 
           <section class="panel hidden" id="topMatchesPanel">
@@ -372,6 +413,16 @@
       const confirmText = document.getElementById('confirmText');
       const confirmYesBtn = document.getElementById('confirmYesBtn');
       const confirmNoBtn = document.getElementById('confirmNoBtn');
+      const adminAddBtn = document.getElementById('adminAddBtn');
+      const adminAddForm = document.getElementById('adminAddForm');
+      const adminTokenInput = document.getElementById('adminTokenInput');
+      const adminProductTypeInput = document.getElementById('adminProductTypeInput');
+      const adminProductSortInput = document.getElementById('adminProductSortInput');
+      const adminProductTypeOptions = document.getElementById('adminProductTypeOptions');
+      const adminProductSortOptions = document.getElementById('adminProductSortOptions');
+      const adminPriceInput = document.getElementById('adminPriceInput');
+      const adminSubmitBtn = document.getElementById('adminSubmitBtn');
+      const adminCancelBtn = document.getElementById('adminCancelBtn');
       const topMatchesPanel = document.getElementById('topMatchesPanel');
       const topMatchesEl = document.getElementById('topMatches');
       const openCatalogBtn = document.getElementById('openCatalogBtn');
@@ -503,6 +554,14 @@
         renderTopMatches();
         setStatus('Выберите корректный вариант из ближайших или откройте полный каталог.', 'info');
       });
+
+      adminAddBtn.addEventListener('click', () => showAdminAddForm());
+      adminCancelBtn.addEventListener('click', () => {
+        adminAddForm.classList.add('hidden');
+        adminAddForm.reset();
+      });
+      adminProductTypeInput.addEventListener('input', () => populateAdminOptions());
+      adminAddForm.addEventListener('submit', (event) => submitAdminCatalogExample(event));
 
       openCatalogBtn.addEventListener('click', () => showCatalog());
       catalogSearch.addEventListener('input', () => renderCatalog(catalogSearch.value));
@@ -668,19 +727,23 @@
         hideDecisionPanels();
         catalogPanel.classList.remove('hidden');
         catalogSearch.focus();
-        if (!catalogItems) {
-          catalogList.innerHTML = '<div class="empty">Загрузка каталога...</div>';
-          try {
-            const response = await fetch('/api/catalog/varieties');
-            const payload = await readJsonResponse(response);
-            if (!response.ok) throw new Error(payload.detail || 'Не удалось загрузить каталог.');
-            catalogItems = payload.items || [];
-          } catch (error) {
-            catalogList.innerHTML = `<div class="empty">${escapeHtml(String(error.message || error))}</div>`;
-            return;
-          }
+        try {
+          await loadCatalogItems();
+        } catch (error) {
+          catalogList.innerHTML = `<div class="empty">${escapeHtml(String(error.message || error))}</div>`;
+          return;
         }
         renderCatalog(catalogSearch.value);
+      }
+
+      async function loadCatalogItems() {
+        if (catalogItems) return catalogItems;
+        catalogList.innerHTML = '<div class="empty">Загрузка каталога...</div>';
+        const response = await fetch('/api/catalog/varieties');
+        const payload = await readJsonResponse(response);
+        if (!response.ok) throw new Error(payload.detail || 'Не удалось загрузить каталог.');
+        catalogItems = payload.items || [];
+        return catalogItems;
       }
 
       function renderCatalog(query) {
@@ -709,6 +772,95 @@
             <span class="catalog-price">${formatPrice(item.price_rub_per_kg)}</span>
           `;
           catalogList.appendChild(button);
+        }
+      }
+
+      async function showAdminAddForm() {
+        if (!lastPrediction || (!lastImageFile && !lastPrediction.prediction_id)) {
+          setStatus('Нет изображения или сохраненного результата распознавания.', 'error');
+          return;
+        }
+        adminAddForm.classList.remove('hidden');
+        adminSubmitBtn.disabled = false;
+        if (lastPrediction.product) {
+          adminPriceInput.value = typeof lastPrediction.product.price_rub_per_kg === 'number'
+            ? lastPrediction.product.price_rub_per_kg
+            : '';
+        }
+        try {
+          await loadCatalogItems();
+          populateAdminOptions();
+        } catch (error) {
+          setStatus(String(error.message || error), 'error');
+        }
+        adminTokenInput.focus();
+      }
+
+      function populateAdminOptions() {
+        const items = catalogItems || [];
+        const selectedType = adminProductTypeInput.value.trim().toLowerCase();
+        const types = uniqueSorted(items.map((item) => item.product_type).filter(Boolean));
+        const sorts = uniqueSorted(items
+          .filter((item) => !selectedType || item.product_type === selectedType)
+          .map((item) => item.product_sort)
+          .filter(Boolean));
+
+        adminProductTypeOptions.innerHTML = types.map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
+        adminProductSortOptions.innerHTML = sorts.map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
+      }
+
+      function uniqueSorted(values) {
+        return [...new Set(values.map((value) => String(value).trim()).filter(Boolean))].sort();
+      }
+
+      async function submitAdminCatalogExample(event) {
+        event.preventDefault();
+        if (!lastPrediction || (!lastImageFile && !lastPrediction.prediction_id)) {
+          setStatus('Нет изображения или сохраненного результата распознавания.', 'error');
+          return;
+        }
+
+        const productType = adminProductTypeInput.value.trim().toLowerCase();
+        const productSort = adminProductSortInput.value.trim().toLowerCase();
+        if (!/^[a-z0-9]+$/.test(productType) || !/^[a-z0-9_]+$/.test(productSort)) {
+          setStatus('Тип и сорт должны быть ASCII slug: apple и fuji.', 'error');
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('admin_token', adminTokenInput.value);
+        formData.append('product_type', productType);
+        formData.append('product_sort', productSort);
+        formData.append('price_rub_per_kg', adminPriceInput.value);
+        if (lastImageFile) {
+          formData.append('image', lastImageFile);
+        }
+        if (lastPrediction.prediction_id) {
+          formData.append('prediction_id', lastPrediction.prediction_id);
+        }
+
+        adminSubmitBtn.disabled = true;
+        setStatus('Добавляем пример в train dataset и БД...', 'info');
+        try {
+          const response = await fetch('/api/admin/catalog/examples', { method: 'POST', body: formData });
+          const payload = await readJsonResponse(response);
+          if (!response.ok) {
+            const detail = payload.detail || 'Не удалось добавить продукт.';
+            if (response.status === 403 && (detail === 'Invalid admin token' || detail === 'Неверный пароль администратора')) {
+              adminTokenInput.focus();
+              throw new Error('Неверный пароль администратора');
+            }
+            throw new Error(detail);
+          }
+          catalogItems = null;
+          adminAddForm.reset();
+          hideDecisionPanels();
+          catalogPanel.classList.add('hidden');
+          setStatus(`Добавлено в train и БД: ${payload.label}`, 'ok');
+        } catch (error) {
+          setStatus(String(error.message || error), 'error');
+        } finally {
+          adminSubmitBtn.disabled = false;
         }
       }
 
@@ -753,6 +905,7 @@
       function hideDecisionPanels() {
         confirmPanel.classList.add('hidden');
         topMatchesPanel.classList.add('hidden');
+        adminAddForm.classList.add('hidden');
       }
 
       async function readJsonResponse(response) {
