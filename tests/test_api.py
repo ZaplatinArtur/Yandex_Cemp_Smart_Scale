@@ -113,6 +113,9 @@ class APITests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Smart Scale", response.text)
+        self.assertIn('id="topkInput" name="top_k" value="5" min="1" max="10"', response.text)
+        self.assertIn("uniqueMatchesBySort", response.text)
+        self.assertNotIn("product_id !== bestId", response.text)
 
     def test_catalog_varieties_merges_price_catalog_and_dataset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -204,6 +207,32 @@ class APITests(unittest.TestCase):
         self.assertEqual(payload["product"]["product_type"], "apple")
         self.assertEqual(payload["product"]["product_sort"], "fuji")
         self.assertIsNotNone(payload["prediction_id"])
+
+    def test_predict_accepts_top_k_ten(self) -> None:
+        pipeline = FakePipeline(result=_ok_result())
+        app = create_app(settings=self.settings, pipeline_factory=lambda _settings: pipeline)
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/predict",
+                data={"weight_grams": "125.0", "top_k": "10"},
+                files={"image": ("fruit.jpg", _image_bytes(), "image/jpeg")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_predict_rejects_top_k_above_ten(self) -> None:
+        pipeline = FakePipeline(result=_ok_result())
+        app = create_app(settings=self.settings, pipeline_factory=lambda _settings: pipeline)
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/predict",
+                data={"weight_grams": "125.0", "top_k": "11"},
+                files={"image": ("fruit.jpg", _image_bytes(), "image/jpeg")},
+            )
+
+        self.assertEqual(response.status_code, 422)
 
     def test_predict_updates_latest_prediction_for_external_clients(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

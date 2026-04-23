@@ -22,7 +22,7 @@ async def predict_product(
     request: Request,
     image: UploadFile = File(...),
     weight_grams: float = Form(...),
-    top_k: int = Form(3, ge=1),
+    top_k: int = Form(3, ge=1, le=10),
     pipeline: RecognitionPipeline = Depends(get_pipeline),
 ) -> PredictionResponse:
     payload = await image.read()

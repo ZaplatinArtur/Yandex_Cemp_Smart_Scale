@@ -58,19 +58,18 @@ class FileVectorStore:
             self.add_batch(ids, embeddings, metadata_list)
 
     def search(self, query_embedding: np.ndarray, top_k: int = 3) -> list[ProductMatch]:
-        if self.count() == 0:
+        if self.count() == 0 or top_k <= 0:
             return []
 
         query = _normalize_rows(query_embedding, self.dim)[0]
         scores = self.embeddings.dot(query)
-        limit = min(top_k, len(scores))
-        top_indices = np.argsort(scores)[::-1][:limit]
+        top_indices = np.argsort(scores)[::-1]
 
         matches: list[ProductMatch] = []
         for idx in top_indices:
             meta = self.metadata[idx] if idx < len(self.metadata) else {}
             matches.append(_build_product_match(self.ids[idx], meta, float(scores[idx])))
-        return matches
+        return _unique_product_matches(matches, top_k)
 
     def save(self, snapshot_path: str | Path | None = None) -> None:
         path = Path(snapshot_path or self.snapshot_path)
@@ -149,7 +148,7 @@ class FaissVectorStore:
             self.add_batch(ids, embeddings, metadata_list)
 
     def search(self, query_embedding: np.ndarray, top_k: int = 3) -> list[ProductMatch]:
-        if faiss is None or self.index is None or self.count() == 0:
+        if faiss is None or self.index is None or self.count() == 0 or top_k <= 0:
             return []
 
         query = np.asarray(query_embedding, dtype=np.float32).reshape(1, -1)
@@ -161,14 +160,14 @@ class FaissVectorStore:
             return []
         query = query / norm
 
-        scores, indices = self.index.search(query, top_k)
+        scores, indices = self.index.search(query, self.count())
         matches: list[ProductMatch] = []
         for score, idx in zip(scores[0], indices[0]):
             if idx < 0 or idx >= len(self.ids):
                 continue
             meta = self.metadata[idx] if idx < len(self.metadata) else {}
             matches.append(_build_product_match(self.ids[idx], meta, float(score)))
-        return matches
+        return _unique_product_matches(matches, top_k)
 
     def save(self, snapshot_path: str | Path | None = None) -> None:
         if faiss is None or self.index is None:
@@ -497,23 +496,49 @@ class PgVectorStore:
         return payload
 
     def search(self, query_embedding: np.ndarray, top_k: int = 3) -> list[ProductMatch]:
+        if top_k <= 0:
+            return []
+
         self.ensure_schema()
         query_vector = _normalize_rows(query_embedding, self.dim)[0]
         vector_literal = _vector_literal(query_vector)
         query = f"""
+            WITH scored AS (
+                SELECT
+                    product_id,
+                    product_type,
+                    product_sort,
+                    price_rub_per_kg,
+                    embedding <=> %s::vector AS distance
+                FROM {self.table}
+            ),
+            ranked AS (
+                SELECT
+                    product_id,
+                    product_type,
+                    product_sort,
+                    price_rub_per_kg,
+                    distance,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY product_type, product_sort
+                        ORDER BY distance, product_id
+                    ) AS row_number
+                FROM scored
+            )
             SELECT
                 product_id,
                 product_type,
                 product_sort,
                 price_rub_per_kg,
-                1 - (embedding <=> %s::vector) AS score
-            FROM {self.table}
-            ORDER BY embedding <=> %s::vector
+                1 - distance AS score
+            FROM ranked
+            WHERE row_number = 1
+            ORDER BY distance, product_id
             LIMIT %s
         """
 
         with psycopg.connect(self.dsn) as conn, conn.cursor() as cursor:
-            cursor.execute(query, (vector_literal, vector_literal, top_k))
+            cursor.execute(query, (vector_literal, top_k))
             rows = cursor.fetchall()
 
         matches: list[ProductMatch] = []
@@ -656,6 +681,20 @@ def _build_product_match(product_id: str, meta: dict[str, Any], score: float) ->
         price_rub_per_kg=_safe_float(meta.get("price_rub_per_kg") or meta.get("price_per_gram") or meta.get("price")),
         metadata=dict(meta),
     )
+
+
+def _unique_product_matches(matches: list[ProductMatch], top_k: int) -> list[ProductMatch]:
+    unique_matches: list[ProductMatch] = []
+    seen: set[tuple[str, str]] = set()
+    for match in matches:
+        key = (match.product_type, match.product_sort)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_matches.append(match)
+        if len(unique_matches) >= top_k:
+            break
+    return unique_matches
 
 
 def _infer_type_from_id(product_id: str) -> str:

@@ -252,6 +252,33 @@ class MLRuntimeTests(unittest.TestCase):
         self.assertEqual(matches[0].product_type, "apple")
         self.assertEqual(matches[0].product_sort, "fuji")
 
+    def test_file_vector_store_returns_unique_sorts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = FileVectorStore(dim=3, snapshot_path=Path(tmp_dir) / "catalog.pkl")
+            store.add_batch(
+                ids=["apple_fuji:00", "apple_fuji:01", "pear_conference:00", "banana_yellow:00"],
+                embeddings=np.array(
+                    [
+                        [1.0, 0.0, 0.0],
+                        [0.99, 0.01, 0.0],
+                        [0.8, 0.2, 0.0],
+                        [0.0, 1.0, 0.0],
+                    ],
+                    dtype=np.float32,
+                ),
+                metadata_list=[
+                    {"product_type": "apple", "product_sort": "fuji", "price_rub_per_kg": 175.0},
+                    {"product_type": "apple", "product_sort": "fuji", "price_rub_per_kg": 175.0},
+                    {"product_type": "pear", "product_sort": "conference", "price_rub_per_kg": 251.0},
+                    {"product_type": "banana", "product_sort": "yellow", "price_rub_per_kg": 149.0},
+                ],
+            )
+
+            matches = store.search(np.array([1.0, 0.0, 0.0], dtype=np.float32), top_k=3)
+
+        self.assertEqual([match.product_id for match in matches], ["apple_fuji:00", "pear_conference:00", "banana_yellow:00"])
+        self.assertEqual(len({(match.product_type, match.product_sort) for match in matches}), 3)
+
     def test_pipeline_blocks_when_hands_are_detected(self) -> None:
         settings = get_settings()
         pipeline = RecognitionPipeline(
@@ -305,10 +332,11 @@ class MLRuntimeTests(unittest.TestCase):
         settings = get_settings()
         store = FileVectorStore(dim=3, snapshot_path=Path(tempfile.gettempdir()) / "catalog.pkl")
         store.add_batch(
-            ids=["apple_fuji", "banana_yellow"],
-            embeddings=np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32),
+            ids=["apple_fuji", "pear_conference", "banana_yellow"],
+            embeddings=np.array([[1.0, 0.0, 0.0], [0.8, 0.2, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32),
             metadata_list=[
                 {"product_type": "apple", "product_sort": "fuji", "price_rub_per_kg": 150.0},
+                {"product_type": "pear", "product_sort": "conference", "price_rub_per_kg": 110.0},
                 {"product_type": "banana", "product_sort": "yellow", "price_rub_per_kg": 120.0},
             ],
         )
@@ -327,7 +355,7 @@ class MLRuntimeTests(unittest.TestCase):
         self.assertEqual(result.product.product_id, "apple_fuji")
         self.assertEqual(result.product.product_type, "apple")
         self.assertEqual(result.product.product_sort, "fuji")
-        self.assertEqual([match.product_id for match in result.top_matches], ["apple_fuji", "banana_yellow"])
+        self.assertEqual([match.product_id for match in result.top_matches], ["pear_conference", "banana_yellow"])
         self.assertAlmostEqual(result.total_price, 15.0)
 
     def test_pipeline_skips_product_localization_when_disabled(self) -> None:
@@ -487,6 +515,59 @@ class MLRuntimeTests(unittest.TestCase):
         self.assertFalse(bootstrap_mock.called)
         self.assertFalse(pipeline._search_index_ready)
         self.assertEqual(pipeline.vector_store.count_calls, 0)
+
+    def test_pgvector_store_search_deduplicates_by_sort_in_sql(self) -> None:
+        class FakeCursor:
+            def __init__(self) -> None:
+                self.query = ""
+                self.params = None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args) -> None:
+                return None
+
+            def execute(self, query, params=None) -> None:
+                self.query = query
+                self.params = params
+
+            def fetchall(self):
+                return [
+                    ("apple_fuji:00", "apple", "fuji", 175.0, 0.99),
+                    ("pear_conference:00", "pear", "conference", 251.0, 0.85),
+                ]
+
+        class FakeConnection:
+            def __init__(self, cursor: FakeCursor) -> None:
+                self._cursor = cursor
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args) -> None:
+                return None
+
+            def cursor(self) -> FakeCursor:
+                return self._cursor
+
+        class FakePsycopg:
+            def __init__(self) -> None:
+                self.cursor = FakeCursor()
+
+            def connect(self, _dsn: str) -> FakeConnection:
+                return FakeConnection(self.cursor)
+
+        fake_psycopg = FakePsycopg()
+        with patch("smart_scale.ml.vector_store.psycopg", fake_psycopg):
+            store = PgVectorStore("postgresql://example", dim=3, table="product_embeddings")
+            store._schema_ready = True
+            matches = store.search(np.array([1.0, 0.0, 0.0], dtype=np.float32), top_k=2)
+
+        self.assertEqual([match.product_id for match in matches], ["apple_fuji:00", "pear_conference:00"])
+        self.assertIn("ROW_NUMBER() OVER", fake_psycopg.cursor.query)
+        self.assertIn("PARTITION BY product_type, product_sort", fake_psycopg.cursor.query)
+        self.assertEqual(fake_psycopg.cursor.params[1], 2)
 
     def test_pgvector_store_builds_migration_statements_for_legacy_schema(self) -> None:
         with patch("smart_scale.ml.vector_store.psycopg", object()):

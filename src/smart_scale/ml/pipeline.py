@@ -118,7 +118,7 @@ class RecognitionPipeline:
         embedding = self.embedder.embed(crop.image)
         steps.append("embedding_completed")
 
-        matches: list[ProductMatch] = self.vector_store.search(embedding, top_k=top_k)
+        matches: list[ProductMatch] = self.vector_store.search(embedding, top_k=top_k + 1)
         steps.append("knn_search_completed")
 
         if not matches:
@@ -133,6 +133,11 @@ class RecognitionPipeline:
             )
 
         best_match = matches[0]
+        top_matches = [
+            match
+            for match in matches[1:]
+            if _product_key(match) != _product_key(best_match)
+        ][:top_k]
         total_price = None
         if best_match.price_rub_per_kg is not None:
             total_price = round((weight_grams / 1000.0) * best_match.price_rub_per_kg, self.settings.price_precision)
@@ -143,7 +148,7 @@ class RecognitionPipeline:
             message="Товар распознан.",
             weight_grams=weight_grams,
             product=best_match,
-            top_matches=matches,
+            top_matches=top_matches,
             anomaly=anomaly,
             crop=crop,
             total_price=total_price,
@@ -260,3 +265,7 @@ class RecognitionPipeline:
             detector_name="full_frame",
             mask_applied=False,
         )
+
+
+def _product_key(match: ProductMatch) -> tuple[str, str]:
+    return (match.product_type, match.product_sort)

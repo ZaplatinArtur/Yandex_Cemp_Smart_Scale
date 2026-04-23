@@ -311,7 +311,7 @@
 
               <div class="field">
                 <label for="topkInput">Количество ближайших вариантов</label>
-                <input type="number" id="topkInput" name="top_k" value="5" min="1" max="20" />
+                <input type="number" id="topkInput" name="top_k" value="5" min="1" max="10" />
               </div>
 
               <div class="actions">
@@ -604,9 +604,10 @@
 
       function renderTopMatches() {
         hideDecisionPanels();
-        const bestId = lastPrediction && lastPrediction.product ? lastPrediction.product.product_id : null;
-        const matches = (lastPrediction && lastPrediction.top_matches ? lastPrediction.top_matches : [])
-          .filter((match) => match.product_id !== bestId);
+        const matches = uniqueMatchesBySort([
+          ...(lastPrediction && lastPrediction.product ? [lastPrediction.product] : []),
+          ...(lastPrediction && lastPrediction.top_matches ? lastPrediction.top_matches : []),
+        ]);
 
         topMatchesEl.innerHTML = '';
         if (matches.length === 0) {
@@ -618,6 +619,24 @@
         }
         openCatalogBtn.textContent = 'Нет в списке';
         topMatchesPanel.classList.remove('hidden');
+      }
+
+      function uniqueMatchesBySort(matches) {
+        const uniqueMatches = [];
+        const seen = new Set();
+        for (const match of matches) {
+          const key = uniqueMatchKey(match);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          uniqueMatches.push(match);
+        }
+        return uniqueMatches;
+      }
+
+      function uniqueMatchKey(match) {
+        if (!match) return '';
+        if (match.product_type || match.product_sort) return `${match.product_type || ''}::${match.product_sort || ''}`;
+        return match.name || match.product_id || '';
       }
 
       function createMatchButton(match) {
