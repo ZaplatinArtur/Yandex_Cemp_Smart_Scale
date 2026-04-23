@@ -132,7 +132,7 @@ class Settings:
             ),
             catalog_yolo_enabled=_as_bool(os.getenv("SMART_SCALE_CATALOG_YOLO"), False),
             embedding_dim=int(os.getenv("SMART_SCALE_EMBEDDING_DIM", default_embedding_dim)),
-            samples_per_sort=int(os.getenv("SMART_SCALE_SAMPLES_PER_SORT", "5")),
+            samples_per_sort=int(os.getenv("SMART_SCALE_SAMPLES_PER_SORT", "10")),
             weight_stability_tolerance=float(os.getenv("SMART_SCALE_WEIGHT_TOLERANCE", "2.0")),
             weight_stability_window=int(os.getenv("SMART_SCALE_WEIGHT_WINDOW", "5")),
         )
