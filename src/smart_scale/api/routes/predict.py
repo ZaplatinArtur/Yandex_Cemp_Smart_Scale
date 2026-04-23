@@ -72,6 +72,7 @@ async def predict_product(
             filename=image.filename,
             content_type=image.content_type,
             top_k=top_k,
+            crop_image=result.crop.image if result.crop is not None and result.crop.mask_applied else None,
         )
         response.prediction_id = str(record["prediction_id"])
         response.created_at = str(record["created_at"])

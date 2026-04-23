@@ -4,3 +4,4 @@ python-multipart
 numpy
 Pillow
 httpx<1
+jinja2

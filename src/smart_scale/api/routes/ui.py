@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from datetime import datetime, timezone
 from pathlib import Path
 import json
@@ -7,11 +8,13 @@ import mimetypes
 import os
 import logging
 import re
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Query, Body, File, Form, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from PIL import Image, UnidentifiedImageError
 
 from smart_scale.api.dependencies import get_pipeline
 from smart_scale.ml.catalog_seed import SUPPORTED_IMAGE_EXTENSIONS, load_price_catalog, normalize_catalog_label, split_sort_label
@@ -44,6 +47,69 @@ async def latest_prediction(request: Request) -> JSONResponse:
     if record is None:
         return JSONResponse({"status": "empty", "prediction": None})
     return JSONResponse({"status": "ok", **record})
+
+
+@ui_router.get("/api/predictions/{prediction_id}/image")
+async def serve_prediction_image(request: Request, prediction_id: str) -> Response:
+    history = getattr(request.app.state, "prediction_history", None)
+    if history is None:
+        raise HTTPException(status_code=404, detail="Prediction history is empty")
+
+    record = history.get(prediction_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+
+    image_path = _resolve_history_file(record.get("image_path"), history.storage_dir.resolve())
+    if not image_path.exists() or not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Prediction image not found")
+
+    content_type = str(record.get("content_type") or "")
+    mime, _ = mimetypes.guess_type(str(image_path))
+    media_type = content_type if content_type.startswith("image/") else mime or "image/jpeg"
+    return FileResponse(str(image_path), media_type=media_type, headers={"Cache-Control": "no-store"})
+
+
+@ui_router.get("/api/predictions/{prediction_id}/crop")
+async def serve_prediction_crop(request: Request, prediction_id: str) -> Response:
+    history = getattr(request.app.state, "prediction_history", None)
+    if history is None:
+        raise HTTPException(status_code=404, detail="Prediction history is empty")
+
+    record = history.get(prediction_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+
+    storage_root = history.storage_dir.resolve()
+    crop_image_path = record.get("crop_image_path")
+    if crop_image_path:
+        resolved_crop_path = _resolve_history_file(crop_image_path, storage_root)
+        if resolved_crop_path.exists() and resolved_crop_path.is_file():
+            return FileResponse(str(resolved_crop_path), media_type="image/jpeg")
+
+    bbox = _prediction_bbox(record)
+    if bbox is None:
+        raise HTTPException(status_code=404, detail="Prediction crop not found")
+
+    image_path = _resolve_history_file(record.get("image_path"), storage_root)
+    if not image_path.exists() or not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Prediction image not found")
+
+    try:
+        with Image.open(image_path) as image:
+            rgb_image = image.convert("RGB")
+            clamped_bbox = _clamp_bbox(bbox, rgb_image.size)
+            if clamped_bbox is None:
+                raise HTTPException(status_code=400, detail="Invalid prediction crop bbox")
+            cropped = rgb_image.crop(clamped_bbox)
+            buffer = io.BytesIO()
+            cropped.save(buffer, format="JPEG", quality=90)
+    except UnidentifiedImageError as exc:
+        raise HTTPException(status_code=400, detail="Prediction image is not readable") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="Prediction image not found") from exc
+
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @ui_router.post("/api/feedback/incorrect")
@@ -295,3 +361,54 @@ def _path_is_inside_any(path: Path, roots: list[Path]) -> bool:
         except ValueError:
             continue
     return False
+
+
+def _resolve_history_file(path_value: Any, storage_root: Path) -> Path:
+    if not path_value:
+        raise HTTPException(status_code=404, detail="Prediction image not found")
+
+    path = Path(str(path_value))
+    if not path.is_absolute():
+        path = storage_root / path
+
+    try:
+        resolved = path.resolve()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid prediction image path") from exc
+
+    if not _path_is_inside_any(resolved, [storage_root]):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return resolved
+
+
+def _prediction_bbox(record: dict[str, Any]) -> tuple[int, int, int, int] | None:
+    prediction = record.get("prediction")
+    if not isinstance(prediction, dict):
+        return None
+
+    crop = prediction.get("crop")
+    if not isinstance(crop, dict):
+        return None
+
+    bbox = crop.get("bbox")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+        return None
+
+    try:
+        return tuple(int(round(float(value))) for value in bbox)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clamp_bbox(bbox: tuple[int, int, int, int], image_size: tuple[int, int]) -> tuple[int, int, int, int] | None:
+    width, height = image_size
+    x1, y1, x2, y2 = bbox
+    clamped = (
+        max(0, min(width, x1)),
+        max(0, min(height, y1)),
+        max(0, min(width, x2)),
+        max(0, min(height, y2)),
+    )
+    if clamped[2] <= clamped[0] or clamped[3] <= clamped[1]:
+        return None
+    return clamped

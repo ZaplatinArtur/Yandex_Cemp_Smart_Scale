@@ -167,6 +167,36 @@
       .metric-label { color: var(--muted); font-size: 0.82rem; }
       .metric-value { margin-top: 2px; font-weight: 750; overflow-wrap: anywhere; }
 
+      .history-image-preview { margin-top: 12px; }
+      .history-image-label {
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 0.88rem;
+        font-weight: 700;
+      }
+      .history-image-frame {
+        width: 100%;
+        height: 220px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f8fbfd;
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+      }
+      .history-image-frame img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .history-image-meta {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 0.84rem;
+        overflow-wrap: anywhere;
+      }
+
       .match-list { display: grid; gap: 10px; }
       .match-card {
         display: grid;
@@ -514,6 +544,7 @@
               <div class="metric"><div class="metric-label">Цена за кг</div><div class="metric-value">${formatPrice(product.price_rub_per_kg)}</div></div>
               <div class="metric"><div class="metric-label">Итого</div><div class="metric-value">${formatTotal(payload.total_price)}</div></div>
             </div>
+            ${renderHistoryImagePreview(payload)}
           `;
           return;
         }
@@ -522,7 +553,32 @@
         lastResultEl.innerHTML = `
           <div class="result-title">${title}</div>
           <div>${escapeHtml(payload.message || 'Нет результата.')}</div>
+          ${renderHistoryImagePreview(payload)}
           ${payload.warning_code ? `<div class="result-meta"><div class="metric"><div class="metric-label">Код</div><div class="metric-value">${escapeHtml(payload.warning_code)}</div></div></div>` : ''}
+        `;
+      }
+
+      function renderHistoryImagePreview(payload) {
+        const predictionId = payload.prediction_id || currentPredictionId;
+        if (!predictionId) return '';
+
+        const crop = payload.crop;
+        const details = [];
+        if (crop && crop.detector_name) details.push(`детектор: ${escapeHtml(crop.detector_name)}`);
+        if (crop && Array.isArray(crop.bbox)) details.push(`bbox: ${escapeHtml(crop.bbox.join(', '))}`);
+        if (crop && typeof crop.confidence === 'number') details.push(`confidence: ${formatScore(crop.confidence)}`);
+        if (crop && crop.mask_applied) details.push('маска применена');
+
+        const meta = details.length > 0 ? `<div class="history-image-meta">${details.join(' · ')}</div>` : '';
+        const src = `/api/predictions/${encodeURIComponent(predictionId)}/image`;
+        return `
+          <div class="history-image-preview">
+            <div class="history-image-label">Исходное изображение</div>
+            <div class="history-image-frame">
+              <img src="${src}" alt="Исходное изображение" loading="lazy" onerror="this.closest('.history-image-preview').classList.add('hidden')" />
+            </div>
+            ${meta}
+          </div>
         `;
       }
 

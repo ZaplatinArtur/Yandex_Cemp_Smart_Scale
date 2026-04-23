@@ -25,6 +25,7 @@ class PredictionHistory:
         filename: str | None,
         content_type: str | None,
         top_k: int,
+        crop_image: Any | None = None,
     ) -> dict[str, Any]:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         prediction_id = uuid4().hex
@@ -34,6 +35,12 @@ class PredictionHistory:
             suffix = ".jpg"
         image_path = self.storage_dir / f"{prediction_id}{suffix}"
         image_path.write_bytes(image_payload)
+
+        crop_image_path: Path | None = None
+        if crop_image is not None and hasattr(crop_image, "save"):
+            crop_image_path = self.storage_dir / f"{prediction_id}_crop.jpg"
+            prepared_crop = crop_image.convert("RGB") if hasattr(crop_image, "convert") else crop_image
+            prepared_crop.save(crop_image_path, format="JPEG", quality=90)
 
         prediction_payload = _dump_model(prediction)
         prediction_payload["prediction_id"] = prediction_id
@@ -45,6 +52,7 @@ class PredictionHistory:
             "original_filename": filename,
             "content_type": content_type,
             "image_path": str(image_path),
+            "crop_image_path": str(crop_image_path) if crop_image_path is not None else None,
             "top_k": top_k,
             "prediction": prediction_payload,
         }

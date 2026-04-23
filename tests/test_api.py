@@ -231,6 +231,55 @@ class APITests(unittest.TestCase):
         self.assertEqual(latest_payload["prediction"]["product"]["product_id"], "apple_fuji")
         self.assertTrue(stored_image_exists)
 
+    def test_prediction_image_endpoint_returns_original_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            settings = replace(self.settings, prediction_history_dir=root / "predictions")
+            pipeline = FakePipeline(result=_ok_result(), settings=settings)
+            app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+            with TestClient(app) as client:
+                predict_response = client.post(
+                    "/api/predict",
+                    data={"weight_grams": "125.0", "top_k": "2"},
+                    files={"image": ("fruit.jpg", _image_bytes(), "image/jpeg")},
+                )
+                prediction_id = predict_response.json()["prediction_id"]
+                image_response = client.get(f"/api/predictions/{prediction_id}/image")
+
+            original_image = Image.open(io.BytesIO(image_response.content))
+
+        self.assertEqual(predict_response.status_code, 200)
+        self.assertEqual(image_response.status_code, 200)
+        self.assertEqual(image_response.headers["content-type"], "image/jpeg")
+        self.assertEqual(original_image.size, (8, 8))
+
+    def test_prediction_crop_endpoint_returns_saved_crop_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            settings = replace(self.settings, prediction_history_dir=root / "predictions")
+            pipeline = FakePipeline(
+                result=_ok_result(crop_image=Image.new("RGB", (4, 5), color=(0, 0, 255))),
+                settings=settings,
+            )
+            app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+            with TestClient(app) as client:
+                predict_response = client.post(
+                    "/api/predict",
+                    data={"weight_grams": "125.0", "top_k": "2"},
+                    files={"image": ("fruit.jpg", _image_bytes(), "image/jpeg")},
+                )
+                prediction_id = predict_response.json()["prediction_id"]
+                crop_response = client.get(f"/api/predictions/{prediction_id}/crop")
+
+            crop_image = Image.open(io.BytesIO(crop_response.content))
+
+        self.assertEqual(predict_response.status_code, 200)
+        self.assertEqual(crop_response.status_code, 200)
+        self.assertEqual(crop_response.headers["content-type"], "image/jpeg")
+        self.assertEqual(crop_image.size, (4, 5))
+
     def test_incorrect_feedback_can_use_stored_prediction_image(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -375,7 +424,7 @@ def _image_bytes() -> bytes:
     return buffer.getvalue()
 
 
-def _ok_result() -> RecognitionResult:
+def _ok_result(crop_image=None) -> RecognitionResult:
     return RecognitionResult(
         status="ok",
         message="Товар распознан.",
@@ -407,7 +456,7 @@ def _ok_result() -> RecognitionResult:
             ),
         ],
         crop=CropResult(
-            image=None,
+            image=crop_image,
             bbox=(0, 0, 8, 8),
             confidence=0.95,
             detector_name="fake_detector",
