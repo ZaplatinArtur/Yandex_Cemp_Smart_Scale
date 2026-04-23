@@ -185,7 +185,7 @@
       .result-title { font-weight: 800; margin-bottom: 6px; }
       .result-meta {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
         margin-top: 10px;
       }
@@ -194,11 +194,6 @@
         border-radius: 8px;
         background: rgba(255, 255, 255, 0.72);
         border: 1px solid rgba(215, 225, 232, 0.8);
-      }
-      .result-meta .metric:last-child {
-        grid-column: 1 / -1;
-        justify-self: center;
-        width: 50%;
       }
       .metric-label { color: var(--muted); font-size: 0.82rem; }
       .metric-value { margin-top: 2px; font-weight: 750; overflow-wrap: anywhere; }
@@ -708,9 +703,10 @@
         image.alt = '';
 
         const body = document.createElement('div');
+        const totalPrice = (match.price_rub_per_kg * (lastPrediction?.weight_grams || 0)) / 1000;
         body.innerHTML = `
           <div class="match-name">${escapeHtml(formatMatchName(match))}</div>
-          <div class="match-details">score ${formatScore(match.score)} · ${formatPrice(match.price_rub_per_kg)}</div>
+          <div class="match-details">Итог ${formatTotal(totalPrice)} · ${formatPrice(match.price_rub_per_kg)}</div>
         `;
 
         button.appendChild(image);
@@ -759,12 +755,13 @@
           button.type = 'button';
           button.className = 'catalog-item';
           button.addEventListener('click', () => submitIncorrectFeedback(item.label, 'catalog'));
+          const totalPrice = (item.price_rub_per_kg * (lastPrediction?.weight_grams || 0)) / 1000;
           button.innerHTML = `
             <span>
               <span class="catalog-label">${escapeHtml(item.label)}</span><br />
-              <span class="match-details">${escapeHtml(item.product_type)} · ${escapeHtml(item.product_sort)}</span>
+              <span class="match-details">${formatPrice(item.price_rub_per_kg)}</span>
             </span>
-            <span class="catalog-price">${formatPrice(item.price_rub_per_kg)}</span>
+            <span class="catalog-price">${formatTotal(totalPrice)}</span>
           `;
           catalogList.appendChild(button);
         }
