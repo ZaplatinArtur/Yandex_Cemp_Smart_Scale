@@ -888,7 +888,7 @@
           if (!response.ok) throw new Error(payload.detail || 'Не удалось сохранить feedback.');
           hideDecisionPanels();
           catalogPanel.classList.add('hidden');
-          setStatus(`Сохранено для дообучения: ${payload.label}`, 'ok');
+          setStatus(`Выбор сохранен.`, 'ok');
         } catch (error) {
           setStatus(String(error.message || error), 'error');
         }
