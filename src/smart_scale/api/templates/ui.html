@@ -613,7 +613,7 @@
             <div class="result-title">${escapeHtml(formatMatchName(product))}</div>
             <div>${escapeHtml(payload.message || 'Продукт распознан.')}</div>
             <div class="result-meta">
-              <div class="metric"><div class="metric-label">Вес</div><div class="metric-value">${formatNumber(payload.weight_grams)} г</div></div>
+              <div class="metric"><div class="metric-label">Вес</div><div class="metric-value">${formatWeightKg(payload.weight_grams)}</div></div>
               <div class="metric"><div class="metric-label">Цена за кг</div><div class="metric-value">${formatPrice(product.price_rub_per_kg)}</div></div>
               <div class="metric"><div class="metric-label">Итого</div><div class="metric-value">${formatTotal(payload.total_price)}</div></div>
             </div>
@@ -936,6 +936,12 @@
 
       function formatNumber(value) {
         return typeof value === 'number' ? value.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) : 'нет';
+      }
+
+      function formatWeightKg(value) {
+        return typeof value === 'number'
+          ? `${(value / 1000).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} кг`
+          : 'нет';
       }
 
       function formatPrice(value) {
