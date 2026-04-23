@@ -37,7 +37,7 @@ class ProductMatch:
 
 @dataclass(slots=True)
 class RecognitionResult:
-    status: Literal["ok", "warning", "error"]
+    status: Literal["ok", "warning", "error", "empty"]
     message: str
     weight_grams: float
     pipeline_steps: list[str] = field(default_factory=list)

@@ -181,6 +181,12 @@
       .result-state.ok { background: var(--success-bg); border-color: #b7e4c7; }
       .result-state.warning { background: var(--warning-bg); border-color: #f4d35e; color: var(--warning-text); }
       .result-state.error { background: var(--danger-bg); border-color: #fdba74; color: #7c2d12; }
+      .result-state.empty {
+        display: grid;
+        place-items: center;
+        min-height: 250px;
+        padding: 16px;
+      }
 
       .result-title { font-weight: 800; margin-bottom: 6px; }
       .result-meta {
@@ -223,6 +229,18 @@
         color: var(--muted);
         font-size: 0.84rem;
         overflow-wrap: anywhere;
+      }
+      .idle-result {
+        width: 100%;
+        display: grid;
+        place-items: center;
+      }
+      .idle-result img {
+        display: block;
+        width: 100%;
+        max-width: 320px;
+        height: auto;
+        object-fit: contain;
       }
 
       .match-list { display: grid; gap: 10px; }
@@ -348,7 +366,11 @@
         <aside>
           <section class="panel">
             <h2>Последнее распознавание</h2>
-            <div id="lastResult" class="empty">Пока нет результата.</div>
+            <div id="lastResult" class="result-state empty">
+              <div class="idle-result">
+                <img src="/api/serve_image?p=mem.jpg" alt="На весах ничего нет" loading="lazy" />
+              </div>
+            </div>
           </section>
 
           <section class="panel hidden" id="confirmPanel">
@@ -435,6 +457,7 @@
       let currentPredictionId = null;
       let isSubmitting = false;
       let catalogItems = null;
+      const idleImageSrc = '/api/serve_image?p=mem.jpg';
 
       filePicker.addEventListener('click', () => fileInput.click());
       filePicker.addEventListener('keydown', (event) => {
@@ -508,7 +531,7 @@
           currentPredictionId = payload.prediction_id || null;
           renderLastResult(payload);
           renderNextStep(payload);
-          setStatus('Распознавание завершено.', 'ok');
+          setStatus(isEmptyPrediction(payload) ? 'На весах ничего нет.' : 'Распознавание завершено.', isEmptyPrediction(payload) ? 'info' : 'ok');
         } catch (error) {
           lastPrediction = null;
           renderErrorResult(String(error.message || error));
@@ -527,9 +550,7 @@
         fileTitle.textContent = 'Выберите изображение или перетащите сюда';
         lastPrediction = null;
         lastImageFile = null;
-        currentPredictionId = null;
-        lastResultEl.className = 'empty';
-        lastResultEl.textContent = 'Пока нет результата.';
+        renderIdleResult();
         hideDecisionPanels();
         catalogPanel.classList.add('hidden');
         setStatus('', 'info');
@@ -584,7 +605,7 @@
           catalogPanel.classList.add('hidden');
           renderLastResult(prediction);
           renderNextStep(prediction);
-          setStatus('Получено новое распознавание из API.', 'info');
+          setStatus('Получено новое состояние из API.', 'info');
         } catch (_error) {
           return;
         }
@@ -592,6 +613,9 @@
 
       function renderNextStep(payload) {
         hideDecisionPanels();
+        if (isEmptyPrediction(payload)) {
+          return;
+        }
         if (payload.status === 'ok' && payload.product) {
           confirmText.textContent = `Распознан ${formatMatchName(payload.product)}. Подтвердите, что это правильный продукт.`;
           confirmPanel.classList.remove('hidden');
@@ -605,6 +629,11 @@
       }
 
       function renderLastResult(payload) {
+        if (isEmptyPrediction(payload)) {
+          renderIdleResult(payload);
+          return;
+        }
+
         const state = payload.status || 'error';
         lastResultEl.className = `result-state ${state}`;
         if (state === 'ok' && payload.product) {
@@ -631,6 +660,15 @@
         `;
       }
 
+      function renderIdleResult(_payload = null) {
+        lastResultEl.className = 'result-state empty';
+        lastResultEl.innerHTML = `
+          <div class="idle-result">
+            <img src="${idleImageSrc}" alt="На весах ничего нет" loading="lazy" />
+          </div>
+        `;
+      }
+
       function renderHistoryImagePreview(payload) {
         const predictionId = payload.prediction_id || currentPredictionId;
         if (!predictionId) return '';
@@ -649,6 +687,10 @@
       function renderErrorResult(message) {
         lastResultEl.className = 'result-state error';
         lastResultEl.innerHTML = `<div class="result-title">Ошибка запроса</div><div>${escapeHtml(message)}</div>`;
+      }
+
+      function isEmptyPrediction(payload) {
+        return !!payload && (payload.status === 'empty' || payload.weight_grams === 0);
       }
 
       function renderTopMatches() {

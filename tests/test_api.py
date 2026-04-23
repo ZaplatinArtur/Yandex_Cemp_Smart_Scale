@@ -134,6 +134,8 @@ class APITests(unittest.TestCase):
         self.assertIn("uniqueMatchesBySort", response.text)
         self.assertIn('id="adminAddBtn"', response.text)
         self.assertIn("/api/admin/catalog/examples", response.text)
+        self.assertIn("/api/serve_image?p=mem.jpg", response.text)
+        self.assertIn("function renderIdleResult", response.text)
         self.assertNotIn("product_id !== bestId", response.text)
 
     def test_catalog_varieties_merges_price_catalog_and_dataset(self) -> None:
@@ -278,6 +280,33 @@ class APITests(unittest.TestCase):
         self.assertEqual(latest_payload["prediction_id"], predict_payload["prediction_id"])
         self.assertEqual(latest_payload["prediction"]["product"]["product_id"], "apple_fuji")
         self.assertTrue(stored_image_exists)
+
+    def test_predict_updates_latest_prediction_with_empty_state_for_zero_weight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            settings = replace(self.settings, prediction_history_dir=root / "predictions")
+            pipeline = FakePipeline(result=_empty_result(), settings=settings)
+            app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+            with TestClient(app) as client:
+                predict_response = client.post(
+                    "/api/predict",
+                    data={"weight_grams": "0.0", "top_k": "2"},
+                    files={"image": ("fruit.jpg", _image_bytes(), "image/jpeg")},
+                )
+                latest_response = client.get("/api/predictions/latest")
+
+            predict_payload = predict_response.json()
+            latest_payload = latest_response.json()
+
+        self.assertEqual(predict_response.status_code, 200)
+        self.assertEqual(predict_payload["status"], "empty")
+        self.assertEqual(latest_response.status_code, 200)
+        self.assertEqual(latest_payload["status"], "ok")
+        self.assertEqual(latest_payload["prediction_id"], predict_payload["prediction_id"])
+        self.assertEqual(latest_payload["prediction"]["status"], "empty")
+        self.assertEqual(latest_payload["prediction"]["weight_grams"], 0.0)
+        self.assertIsNone(latest_payload["prediction"]["product"])
 
     def test_prediction_image_endpoint_returns_original_image(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -629,8 +658,8 @@ class APITests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "Не удалось распознать изображение.")
 
-    def test_predict_returns_business_error_for_non_positive_weight(self) -> None:
-        pipeline = FakePipeline(result=_business_error_result())
+    def test_predict_returns_empty_state_for_zero_weight(self) -> None:
+        pipeline = FakePipeline(result=_empty_result())
         app = create_app(settings=self.settings, pipeline_factory=lambda _settings: pipeline)
 
         with TestClient(app) as client:
@@ -641,7 +670,7 @@ class APITests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "error")
+        self.assertEqual(response.json()["status"], "empty")
 
     def test_predict_returns_warning_when_hands_are_detected(self) -> None:
         pipeline = FakePipeline(result=_warning_result())
@@ -759,6 +788,15 @@ def _warning_result() -> RecognitionResult:
             warning_code="hands_detected",
         ),
         pipeline_steps=["anomaly_check_completed"],
+    )
+
+
+def _empty_result() -> RecognitionResult:
+    return RecognitionResult(
+        status="empty",
+        message="На весах ничего нет.",
+        weight_grams=0.0,
+        pipeline_steps=["empty_weight_detected"],
     )
 
 

@@ -310,7 +310,7 @@ class MLRuntimeTests(unittest.TestCase):
         self.assertEqual(result.status, "warning")
         self.assertEqual(result.anomaly.warning_code, "hands_detected")
 
-    def test_pipeline_returns_error_for_non_positive_weight(self) -> None:
+    def test_pipeline_returns_empty_for_zero_weight(self) -> None:
         settings = get_settings()
         pipeline = RecognitionPipeline(
             settings=settings,
@@ -321,6 +321,24 @@ class MLRuntimeTests(unittest.TestCase):
         )
 
         result = pipeline.run(Image.open(PROJECT_ROOT / "images" / "r0_10.jpg").convert("RGB"), weight_grams=0.0)
+
+        self.assertEqual(result.status, "empty")
+        self.assertIn("empty_weight_detected", result.pipeline_steps)
+        self.assertIsNone(result.product)
+        self.assertEqual(result.top_matches, [])
+        self.assertIsNone(result.total_price)
+
+    def test_pipeline_returns_error_for_negative_weight(self) -> None:
+        settings = get_settings()
+        pipeline = RecognitionPipeline(
+            settings=settings,
+            hand_detector=FakeHandDetector(blocked=False),
+            localizer=FakeLocalizer(),
+            embedder=FakeEmbedder(np.array([1.0, 0.0, 0.0], dtype=np.float32)),
+            vector_store=FileVectorStore(dim=3, snapshot_path=Path(tempfile.gettempdir()) / "unused.pkl"),
+        )
+
+        result = pipeline.run(Image.open(PROJECT_ROOT / "images" / "r0_10.jpg").convert("RGB"), weight_grams=-1.0)
 
         self.assertEqual(result.status, "error")
         self.assertIn("weight_validation_failed", result.pipeline_steps)

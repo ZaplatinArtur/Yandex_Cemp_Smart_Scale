@@ -25,7 +25,7 @@ class CropResponse(BaseModel):
 class PredictionResponse(BaseModel):
     prediction_id: str | None = None
     created_at: str | None = None
-    status: Literal["ok", "warning", "error"]
+    status: Literal["ok", "warning", "error", "empty"]
     message: str
     weight_grams: float
     total_price: float | None = None

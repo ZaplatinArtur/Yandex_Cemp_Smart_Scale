@@ -85,7 +85,15 @@ class RecognitionPipeline:
         self._warmup_completed = True
 
     def run(self, image: Any, weight_grams: float, top_k: int | None = None) -> RecognitionResult:
-        if weight_grams <= 0:
+        if weight_grams == 0:
+            return RecognitionResult(
+                status="empty",
+                message="На весах ничего нет.",
+                weight_grams=weight_grams,
+                pipeline_steps=["empty_weight_detected"],
+            )
+
+        if weight_grams < 0:
             return RecognitionResult(
                 status="error",
                 message="Вес должен быть больше нуля.",
