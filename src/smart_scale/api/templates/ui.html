@@ -108,9 +108,9 @@
 
       .result-shell {
         display: grid;
-        grid-template-columns: minmax(520px, 640px) minmax(0, 1fr);
+        grid-template-columns: auto 1fr;
         gap: 24px;
-        align-items: center;
+        align-items: start;
       }
 
       .result-media {
@@ -122,8 +122,8 @@
 
       .result-image-frame {
         position: relative;
-        width: min(100%, 640px);
-        aspect-ratio: 4 / 3;
+        width: 360px;
+        height: 360px;
         flex: 0 0 auto;
         border-radius: 30px;
         padding: 8px;
@@ -153,8 +153,10 @@
         height: 100%;
         border-radius: 22px;
         background: rgba(255, 255, 255, 0.38);
-        object-fit: contain;
+        object-fit: cover;
         object-position: center;
+        border: 2px solid rgba(147, 192, 142, 0.5);
+        box-shadow: 0 8px 20px rgba(79, 127, 72, 0.15), inset 0 1px 2px rgba(255, 255, 255, 0.6);
       }
 
       .result-details {
@@ -410,6 +412,8 @@
         object-fit: cover;
         border-radius: 18px;
         background: var(--surface-muted);
+        border: 1.5px solid rgba(147, 192, 142, 0.45);
+        box-shadow: 0 4px 12px rgba(79, 127, 72, 0.12);
       }
 
       .match-name,
@@ -572,7 +576,7 @@
         <div class="logo">УВ</div>
         <div>
           <div class="brand-title">Умные весы</div>
-          <div class="brand-subtitle">Веселый перевесик</div>
+          <div id="brandSubtitle" class="brand-subtitle">Грустный перевесик</div>
         </div>
       </header>
 
@@ -709,7 +713,7 @@
     </div>
 
     <script>
-      const idleImageSrc = '/api/serve_image?p=mem.jpg';
+      const idleImageSrc = '/api/serve_image?p=mem.jpg&t=' + Date.now();
 
       const latestResultImage = document.getElementById('latestResultImage');
       const resultStatusChip = document.getElementById('resultStatusChip');
@@ -749,6 +753,7 @@
       const adminPriceInput = document.getElementById('adminPriceInput');
       const adminSubmitBtn = document.getElementById('adminSubmitBtn');
       const adminCancelBtn = document.getElementById('adminCancelBtn');
+      const brandSubtitle = document.getElementById('brandSubtitle');
 
       let lastPrediction = null;
       let currentPredictionId = null;
@@ -873,6 +878,7 @@
         metricPrice.textContent = product ? formatPrice(product.price_rub_per_kg) : 'цены нет';
         metricTotal.textContent = formatTotal(payload.total_price);
 
+        brandSubtitle.textContent = 'Веселый перевесик';
         updateActionButtons(payload);
         setStatus(resultMessage(payload), stateToKind(state));
       }
@@ -887,6 +893,7 @@
         metricWeight.textContent = '—';
         metricPrice.textContent = '—';
         metricTotal.textContent = '—';
+        brandSubtitle.textContent = 'Грустный перевесик';
         updateActionButtons(null);
         setStatus('Ждем новое распознавание', 'info');
       }
