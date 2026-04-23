@@ -130,13 +130,26 @@ class APITests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Smart Scale", response.text)
-        self.assertIn('id="topkInput" name="top_k" value="5" min="1" max="10"', response.text)
-        self.assertIn("uniqueMatchesBySort", response.text)
+        self.assertIn('id="latestResultImage"', response.text)
+        self.assertIn('id="workspacePanel"', response.text)
+        self.assertIn('id="confirmYesBtn"', response.text)
+        self.assertIn('id="confirmNoBtn"', response.text)
         self.assertIn('id="adminAddBtn"', response.text)
+        self.assertIn('id="adminAuthForm"', response.text)
+        self.assertIn('id="adminAuthBtn"', response.text)
+        self.assertIn('id="adminAddForm"', response.text)
+        self.assertIn("/api/admin/verify", response.text)
         self.assertIn("/api/admin/catalog/examples", response.text)
         self.assertIn("/api/serve_image?p=mem.jpg", response.text)
+        self.assertIn("/api/predictions/latest", response.text)
+        self.assertIn("function pollLatestPrediction", response.text)
         self.assertIn("function renderIdleResult", response.text)
-        self.assertNotIn("product_id !== bestId", response.text)
+        self.assertIn("function verifyAdminAccess", response.text)
+        self.assertNotIn('id="predictForm"', response.text)
+        self.assertNotIn('id="topkInput"', response.text)
+        self.assertNotIn('id="filePicker"', response.text)
+        self.assertNotIn("fetch('/api/predict'", response.text)
+        self.assertNotIn("Добавление в train и БД", response.text)
 
     def test_catalog_varieties_merges_price_catalog_and_dataset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -431,6 +444,45 @@ class APITests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["detail"], "Неверный пароль администратора")
         self.assertEqual(pipeline.added_examples, [])
+
+    def test_admin_verify_accepts_valid_token(self) -> None:
+        settings = replace(self.settings, admin_token="secret")
+        pipeline = FakePipeline(result=_ok_result(), settings=settings)
+        app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+        with TestClient(app) as client:
+            response = client.post("/api/admin/verify", data={"admin_token": "secret"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+    def test_admin_verify_rejects_invalid_token(self) -> None:
+        settings = replace(self.settings, admin_token="secret")
+        pipeline = FakePipeline(result=_ok_result(), settings=settings)
+        app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+        with TestClient(app) as client:
+            response = client.post("/api/admin/verify", data={"admin_token": "wrong"})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["detail"],
+            "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 \u043f\u0430\u0440\u043e\u043b\u044c \u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430",
+        )
+
+    def test_admin_verify_rejects_missing_config(self) -> None:
+        settings = replace(self.settings, admin_token=None)
+        pipeline = FakePipeline(result=_ok_result(), settings=settings)
+        app = create_app(settings=settings, pipeline_factory=lambda _settings: pipeline)
+
+        with TestClient(app) as client:
+            response = client.post("/api/admin/verify", data={"admin_token": "secret"})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["detail"],
+            "\u041f\u0430\u0440\u043e\u043b\u044c \u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430 \u043d\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043d",
+        )
 
     def test_admin_catalog_example_rejects_unconfigured_admin_token(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

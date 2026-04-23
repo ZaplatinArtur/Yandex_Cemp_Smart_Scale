@@ -211,6 +211,15 @@ async def record_incorrect_feedback(
     )
 
 
+@ui_router.post("/api/admin/verify")
+async def verify_admin_access(
+    admin_token: str = Form(...),
+    pipeline: RecognitionPipeline = Depends(get_pipeline),
+) -> JSONResponse:
+    _verify_admin_token(pipeline.settings.admin_token, admin_token)
+    return JSONResponse({"status": "ok"})
+
+
 @ui_router.post("/api/admin/catalog/examples")
 async def add_admin_catalog_example(
     request: Request,
