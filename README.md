@@ -49,6 +49,28 @@ $env:SMART_SCALE_EMBEDDING_DIM = "384"
 
 Если `hand_landmarker.task` отсутствует, API запустится, но проверка рук будет пропущена.
 
+## Скачивание датасета
+
+Датасет `varieties_classification_dataset` содержит изображения 64 сортов фруктов и овощей, разделенные на train и test выборки.
+
+**Скачать датасет:**
+
+https://drive.google.com/file/d/1KYP3B15wL_P5HSUwMIuLgF47NrzD0X4s/view?usp=sharing
+
+После скачивания распакуйте архив в корень проекта так, чтобы получилась структура:
+
+```text
+varieties_classification_dataset/
+├── train/
+│   ├── apple_fuji/
+│   ├── apple_golden/
+│   └── ...
+└── test/
+    ├── apple_fuji/
+    ├── apple_golden/
+    └── ...
+```
+
 ## Структура проекта
 
 ```text
