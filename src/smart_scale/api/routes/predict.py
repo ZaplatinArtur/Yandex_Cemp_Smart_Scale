@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from PIL import Image, UnidentifiedImageError
 
@@ -19,6 +19,7 @@ LOGGER = logging.getLogger("smart_scale.api.predict")
 
 @router.post("/predict", response_model=PredictionResponse)
 async def predict_product(
+    request: Request,
     image: UploadFile = File(...),
     weight_grams: float = Form(...),
     top_k: int = Form(3, ge=1),
@@ -50,7 +51,7 @@ async def predict_product(
         result.weight_grams,
         top_k,
     )
-    return PredictionResponse(
+    response = PredictionResponse(
         status=result.status,
         message=result.message,
         weight_grams=result.weight_grams,
@@ -63,6 +64,18 @@ async def predict_product(
         embedding_dim=result.embedding_dim,
         pipeline_steps=result.pipeline_steps,
     )
+    history = getattr(request.app.state, "prediction_history", None)
+    if history is not None:
+        record = history.record(
+            response,
+            payload,
+            filename=image.filename,
+            content_type=image.content_type,
+            top_k=top_k,
+        )
+        response.prediction_id = str(record["prediction_id"])
+        response.created_at = str(record["created_at"])
+    return response
 
 
 @router.get("/health", response_model=HealthResponse)

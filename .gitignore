@@ -185,6 +185,7 @@ cython_debug/
 .tmp/
 .tmp_tests/
 .tmp_tests_stale/
+data/feedback/
 varieties_classification_dataset/
 assets/models/*.bak
 assets/models/*.tmp

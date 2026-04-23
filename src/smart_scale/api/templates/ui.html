@@ -3,322 +3,723 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Smart Scale — UI</title>
+    <title>Smart Scale UI</title>
     <style>
-      :root{--bg:#f6f8fb;--card:#ffffff;--muted:#6b7280;--accent:#2563eb;--danger:#ef4444;--success:#16a34a}
-      *{box-sizing:border-box}
-      body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:#111827;margin:0;padding:24px}
-      .container{max-width:1100px;margin:0 auto}
-      .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding:14px;border-radius:12px;background:linear-gradient(90deg, rgba(37,99,235,0.06), rgba(99,102,241,0.03));box-shadow:0 8px 24px rgba(2,6,23,0.04)}
-      .brand{display:flex;align-items:center;gap:12px}
-      .logo{width:52px;height:52px;border-radius:10px;background:linear-gradient(135deg,#34d399,#60a5fa);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:1.05rem;box-shadow:0 8px 24px rgba(37,99,235,0.08)}
-      .brand .name{font-size:1.5rem;font-weight:800;color:#0f172a;line-height:1}
-      .brand .sub{color:var(--muted);font-weight:600;font-size:0.95rem;margin-top:2px}
-      h2{display:none;margin:0}
-      .page{display:flex;gap:24px;align-items:flex-start}
-      .main{flex:1}
-      .panel{background:var(--card);padding:18px;border-radius:10px;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
-      .form .field{margin-bottom:12px}
-      label{display:block;font-weight:600;margin-bottom:6px;color:var(--muted)}
-      input[type=number],input[type=text]{padding:8px;border:1px solid #e6e9ee;border-radius:8px}
-      input[type=file]{display:block}
-      button[type=submit]{background:var(--accent);color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer}
-      button[type=submit]:hover{opacity:0.95;transform:translateY(-1px)}
-      .sidebar{width:360px}
-      .results-card{position:sticky;top:20px}
-      .results-card h3{margin:0 0 10px 0}
-      .matches{display:flex;flex-direction:column;gap:12px}
-      .card{background:var(--card);border-radius:10px;padding:10px;box-shadow:0 6px 18px rgba(15,23,42,0.06);cursor:pointer;display:flex;flex-direction:column;align-items:center;transition:transform .14s ease,box-shadow .14s ease}
-      .card:hover{transform:translateY(-6px);box-shadow:0 12px 28px rgba(15,23,42,0.12)}
-      .card img{width:100%;height:160px;object-fit:cover;border-radius:6px;background:#f3f4f6}
-      .card .title{margin-top:8px;font-weight:600;color:#111827}
-      .card .score{margin-top:6px;color:var(--muted);font-size:0.95rem}
-      #status{margin-top:12px;color:var(--muted)}
-      #notMatchBtn{margin-top:10px;background:var(--danger);color:#fff;border:none;padding:8px 10px;border-radius:8px;cursor:pointer;display:inline-block}
+      :root {
+        --bg: #f4f7fb;
+        --surface: #ffffff;
+        --surface-2: #eef4f8;
+        --line: #d7e1e8;
+        --text: #17212b;
+        --muted: #657282;
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --danger: #c2410c;
+        --danger-bg: #fff4ed;
+        --success: #15803d;
+        --success-bg: #ecfdf3;
+        --warning-bg: #fff7d6;
+        --warning-text: #7c5800;
+      }
 
-      /* File picker styles */
-      .file-picker{border:1px dashed #e6e9ee;border-radius:10px;padding:10px;background:linear-gradient(180deg,rgba(255,255,255,0.6),rgba(250,250,251,0.6));transition:box-shadow .14s ease, border-color .14s ease;cursor:pointer}
-      .file-picker:hover{box-shadow:0 8px 20px rgba(2,6,23,0.04);border-color:rgba(37,99,235,0.18)}
-      .file-picker.dragover{border-color:var(--accent);box-shadow:0 10px 28px rgba(37,99,235,0.08);background:rgba(37,99,235,0.02)}
-      .fp-inner{display:flex;align-items:center;gap:12px}
-      .fp-preview{width:80px;height:80px;flex:0 0 80px;border-radius:8px;overflow:hidden;background:#f8fafc;display:flex;align-items:center;justify-content:center}
-      .fp-preview img{width:100%;height:100%;object-fit:cover;display:block}
-      .fp-text{flex:1;min-width:0}
-      .fp-title{font-weight:600}
-      .fp-sub{color:var(--muted);font-size:0.9rem;margin-top:4px}
-      .browse-btn{background:#fff;border:1px solid #e6e9ee;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--accent)}
-      .browse-btn:hover{background:#f8fafc}
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      }
 
-      /* Selection toast (centered confirmation) */
-      .selection-toast{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,0.28);z-index:9999}
-      .selection-card{background:var(--card);padding:16px 20px;border-radius:12px;display:flex;align-items:center;gap:14px;box-shadow:0 12px 30px rgba(2,6,23,0.18);transform:translateY(8px) scale(0.98);opacity:0;transition:transform .28s cubic-bezier(.2,.9,.2,1),opacity .28s}
-      .selection-toast.show .selection-card{transform:translateY(0) scale(1);opacity:1}
-      .toast-icon{flex:0 0 48px;width:48px;height:48px;border-radius:50%;display:block}
-      .toast-text{font-weight:700;color:#0f172a;font-size:1rem}
-      @media (max-width:900px){.page{flex-direction:column}.sidebar{width:100%}.card img{height:200px}}
+      .container { max-width: 1180px; margin: 0 auto; }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+        padding: 16px 18px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .brand { display: flex; align-items: center; gap: 12px; }
+      .logo {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 800;
+      }
+      .brand-title { font-size: 1.35rem; font-weight: 800; line-height: 1.1; }
+      .brand-subtitle { color: var(--muted); margin-top: 3px; }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 420px;
+        gap: 20px;
+        align-items: start;
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 18px;
+      }
+
+      .panel + .panel { margin-top: 16px; }
+      .panel h2, .panel h3 { margin: 0 0 14px; line-height: 1.2; }
+      .panel h2 { font-size: 1.05rem; }
+      .panel h3 { font-size: 1rem; }
+
+      .field { margin-bottom: 14px; }
+      label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-weight: 650;
+        font-size: 0.92rem;
+      }
+      input[type="number"], input[type="search"] {
+        width: 100%;
+        min-height: 38px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--text);
+      }
+
+      .file-picker {
+        border: 1px dashed #b8c8d4;
+        border-radius: 8px;
+        padding: 12px;
+        background: #fbfdff;
+        cursor: pointer;
+      }
+      .file-picker.dragover { border-color: var(--accent); background: #f0fdfa; }
+      .file-row { display: flex; gap: 12px; align-items: center; }
+      .preview {
+        width: 84px;
+        height: 84px;
+        flex: 0 0 84px;
+        border-radius: 8px;
+        background: var(--surface-2);
+        overflow: hidden;
+      }
+      .preview img { width: 100%; height: 100%; object-fit: cover; display: none; }
+      .file-title { font-weight: 750; overflow-wrap: anywhere; }
+      .file-hint { margin-top: 4px; color: var(--muted); font-size: 0.92rem; }
+
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+      button {
+        min-height: 38px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        background: #fff;
+        color: var(--text);
+      }
+      button:disabled { opacity: 0.58; cursor: not-allowed; }
+      .btn-primary { background: var(--accent); color: #fff; }
+      .btn-primary:hover { background: var(--accent-strong); }
+      .btn-secondary { border-color: var(--line); }
+      .btn-danger { background: var(--danger); color: #fff; }
+      .btn-ghost { color: var(--accent-strong); border-color: #9ccfc9; }
+
+      .status {
+        min-height: 24px;
+        margin-top: 12px;
+        color: var(--muted);
+      }
+
+      .result-state {
+        border-radius: 8px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        background: #fbfdff;
+      }
+      .result-state.ok { background: var(--success-bg); border-color: #b7e4c7; }
+      .result-state.warning { background: var(--warning-bg); border-color: #f4d35e; color: var(--warning-text); }
+      .result-state.error { background: var(--danger-bg); border-color: #fdba74; color: #7c2d12; }
+
+      .result-title { font-weight: 800; margin-bottom: 6px; }
+      .result-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .metric {
+        padding: 8px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(215, 225, 232, 0.8);
+      }
+      .metric-label { color: var(--muted); font-size: 0.82rem; }
+      .metric-value { margin-top: 2px; font-weight: 750; overflow-wrap: anywhere; }
+
+      .match-list { display: grid; gap: 10px; }
+      .match-card {
+        display: grid;
+        grid-template-columns: 86px minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        text-align: left;
+        width: 100%;
+      }
+      .match-card:hover { border-color: #8cc7c0; }
+      .match-card img {
+        width: 86px;
+        height: 72px;
+        border-radius: 8px;
+        object-fit: cover;
+        background: var(--surface-2);
+      }
+      .match-name { font-weight: 800; overflow-wrap: anywhere; }
+      .match-details { margin-top: 5px; color: var(--muted); font-size: 0.9rem; }
+
+      .catalog-tools { display: grid; gap: 10px; margin-bottom: 10px; }
+      .catalog-list {
+        display: grid;
+        gap: 8px;
+        max-height: 430px;
+        overflow: auto;
+        padding-right: 4px;
+      }
+      .catalog-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        width: 100%;
+        border: 1px solid var(--line);
+        background: #fff;
+        text-align: left;
+      }
+      .catalog-label { font-weight: 760; overflow-wrap: anywhere; }
+      .catalog-price { color: var(--muted); font-size: 0.9rem; white-space: nowrap; }
+
+      .empty {
+        color: var(--muted);
+        padding: 12px;
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+      }
+
+      .hidden { display: none !important; }
+
+      @media (max-width: 980px) {
+        body { padding: 14px; }
+        .layout { grid-template-columns: 1fr; }
+        .result-meta { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
     <div class="container">
-      <div class="header">
+      <header class="header">
         <div class="brand">
           <div class="logo">SS</div>
           <div>
-            <div class="name">Smart Scale</div>
-            <div class="sub">Интеллектуальное распознавание продуктов</div>
+            <div class="brand-title">Smart Scale</div>
+            <div class="brand-subtitle">Распознавание продукта и сбор ошибок для дообучения</div>
           </div>
         </div>
-      </div>
-      <div class="page">
-        <main class="main">
-          <div class="panel form">
+      </header>
+
+      <div class="layout">
+        <main>
+          <section class="panel">
+            <h2>Новое распознавание</h2>
             <form id="predictForm">
               <div class="field">
-                <label>Фото (из телефона/камеры):</label>
+                <label for="imageInput">Фото продукта</label>
                 <div class="file-picker" id="filePicker" role="button" tabindex="0">
-                  <input type="file" id="imageInput" name="image" accept="image/*" required style="display:none" />
-                  <div class="fp-inner">
-                    <div class="fp-preview" id="preview" aria-hidden="true">
-                      <img id="previewImg" src="" alt="" style="display:none" />
-                    </div>
-                    <div class="fp-text" id="fpText">
-                      <div class="fp-title">Выберите изображение или перетащите сюда</div>
-                      <div class="fp-sub">jpg, png • макс 10 MB</div>
-                      <div style="margin-top:8px">
-                        <button type="button" id="browseBtn" class="browse-btn">Выбрать файл</button>
-                      </div>
+                  <input type="file" id="imageInput" name="image" accept="image/*" required hidden />
+                  <div class="file-row">
+                    <div class="preview"><img id="previewImg" alt="" /></div>
+                    <div>
+                      <div class="file-title" id="fileTitle">Выберите изображение или перетащите сюда</div>
+                      <div class="file-hint">JPG, PNG, WEBP до 10 MB</div>
                     </div>
                   </div>
                 </div>
               </div>
+
               <div class="field">
-                <label>Вес (граммы):</label>
+                <label for="weightInput">Вес, граммы</label>
                 <input type="number" id="weightInput" name="weight_grams" value="100" min="0" step="0.01" required />
               </div>
+
               <div class="field">
-                <label>Количество совпадений:</label>
-                <input type="number" id="topkInput" name="top_k" value="3" min="1" max="10" />
+                <label for="topkInput">Количество ближайших вариантов</label>
+                <input type="number" id="topkInput" name="top_k" value="5" min="1" max="20" />
               </div>
-              <div style="margin-top:12px">
-                <button type="submit">Отправить и распознать</button>
+
+              <div class="actions">
+                <button type="submit" class="btn-primary" id="submitBtn">Распознать</button>
+                <button type="button" class="btn-secondary" id="resetBtn">Сбросить</button>
               </div>
             </form>
+            <div id="status" class="status"></div>
+          </section>
 
-            <div id="status"></div>
-          </div>
+          <section class="panel hidden" id="catalogPanel">
+            <h3>Полный список сортов</h3>
+            <div class="catalog-tools">
+              <input type="search" id="catalogSearch" placeholder="Найти сорт, например apple_fuji" />
+            </div>
+            <div id="catalogList" class="catalog-list"></div>
+          </section>
         </main>
 
-        <aside class="sidebar">
-          <div id="results" class="results-card" style="display:none">
-            <h3>Топ совпадений</h3>
-            <div id="matches" class="matches"></div>
-            <div style="margin-top:12px">
-              <button id="notMatchBtn" style="display:none">Не тот товар</button>
-            </div>
-          </div>
-        </aside>
-      </div>
-    </div>
+        <aside>
+          <section class="panel">
+            <h2>Последнее распознавание</h2>
+            <div id="lastResult" class="empty">Пока нет результата.</div>
+          </section>
 
-    <div id="selectionToast" class="selection-toast" style="display:none" aria-hidden="true">
-      <div class="selection-card" role="status" aria-live="polite">
-        <svg class="toast-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <circle cx="12" cy="12" r="10" fill="var(--success)"/>
-          <path d="M7.5 12.5l2.5 2.5L16.5 9" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-        <div class="toast-text">Товар добавлен в корзину</div>
+          <section class="panel hidden" id="confirmPanel">
+            <h3>Подтверждение</h3>
+            <div id="confirmText" class="status"></div>
+            <div class="actions">
+              <button type="button" class="btn-primary" id="confirmYesBtn">Да, это он</button>
+              <button type="button" class="btn-danger" id="confirmNoBtn">Не тот продукт</button>
+            </div>
+          </section>
+
+          <section class="panel hidden" id="topMatchesPanel">
+            <h3>Ближайшие варианты</h3>
+            <div id="topMatches" class="match-list"></div>
+            <div class="actions" style="margin-top: 12px;">
+              <button type="button" class="btn-ghost" id="openCatalogBtn">Нет в списке</button>
+            </div>
+          </section>
+        </aside>
       </div>
     </div>
 
     <script>
       const form = document.getElementById('predictForm');
-      const matchesEl = document.getElementById('matches');
-      const statusEl = document.getElementById('status');
-      const notMatchBtn = document.getElementById('notMatchBtn');
-      // file picker elements & preview
       const filePicker = document.getElementById('filePicker');
       const fileInput = document.getElementById('imageInput');
-      const browseBtn = document.getElementById('browseBtn');
       const previewImg = document.getElementById('previewImg');
-      const fpTitle = document.querySelector('.fp-title');
+      const fileTitle = document.getElementById('fileTitle');
+      const statusEl = document.getElementById('status');
+      const submitBtn = document.getElementById('submitBtn');
+      const resetBtn = document.getElementById('resetBtn');
 
-      if (browseBtn) browseBtn.addEventListener('click', (e) => { e.preventDefault(); fileInput.click(); });
-      if (filePicker) {
-        filePicker.addEventListener('click', (e) => { if (e.target === filePicker) fileInput.click(); });
-        filePicker.addEventListener('dragover', (e) => { e.preventDefault(); filePicker.classList.add('dragover'); });
-        filePicker.addEventListener('dragleave', (e) => { e.preventDefault(); filePicker.classList.remove('dragover'); });
-        filePicker.addEventListener('drop', (e) => {
-          e.preventDefault(); filePicker.classList.remove('dragover');
-          const files = e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : null;
-          if (files && files[0]) {
-            const f = files[0];
-            const dt = new DataTransfer(); dt.items.add(f); fileInput.files = dt.files;
-            handleFile(f);
-          }
-        });
-      }
-      if (fileInput) fileInput.addEventListener('change', () => { if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]); });
+      const lastResultEl = document.getElementById('lastResult');
+      const confirmPanel = document.getElementById('confirmPanel');
+      const confirmText = document.getElementById('confirmText');
+      const confirmYesBtn = document.getElementById('confirmYesBtn');
+      const confirmNoBtn = document.getElementById('confirmNoBtn');
+      const topMatchesPanel = document.getElementById('topMatchesPanel');
+      const topMatchesEl = document.getElementById('topMatches');
+      const openCatalogBtn = document.getElementById('openCatalogBtn');
+      const catalogPanel = document.getElementById('catalogPanel');
+      const catalogSearch = document.getElementById('catalogSearch');
+      const catalogList = document.getElementById('catalogList');
+
+      let lastPrediction = null;
+      let lastImageFile = null;
+      let currentPredictionId = null;
+      let isSubmitting = false;
+      let catalogItems = null;
+
+      filePicker.addEventListener('click', () => fileInput.click());
+      filePicker.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          fileInput.click();
+        }
+      });
+      filePicker.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        filePicker.classList.add('dragover');
+      });
+      filePicker.addEventListener('dragleave', () => filePicker.classList.remove('dragover'));
+      filePicker.addEventListener('drop', (event) => {
+        event.preventDefault();
+        filePicker.classList.remove('dragover');
+        const file = event.dataTransfer.files && event.dataTransfer.files[0];
+        if (!file) return;
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        fileInput.files = transfer.files;
+        handleFile(file);
+      });
+      fileInput.addEventListener('change', () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (file) handleFile(file);
+      });
 
       function handleFile(file) {
-        const maxMB = 10;
-        if (file.size > maxMB * 1024 * 1024) { statusEl.textContent = 'Файл слишком большой (макс 10 MB)'; return; }
+        if (file.size > 10 * 1024 * 1024) {
+          setStatus('Файл больше 10 MB.', 'error');
+          return;
+        }
+        lastImageFile = file;
+        fileTitle.textContent = file.name;
         const reader = new FileReader();
-        reader.onload = (ev) => {
-          if (previewImg) { previewImg.src = ev.target.result; previewImg.style.display = 'block'; }
-          if (fpTitle) fpTitle.textContent = file.name;
+        reader.onload = (event) => {
+          previewImg.src = event.target.result;
+          previewImg.style.display = 'block';
         };
         reader.readAsDataURL(file);
       }
 
-      form.addEventListener('submit', async (ev) => {
-        ev.preventDefault();
-        matchesEl.innerHTML = '';
-        statusEl.textContent = 'Загружаем и выполняем предсказание...';
-        // hide previous results until new ones arrive
-        document.getElementById('results').style.display = 'none';
-        notMatchBtn.style.display = 'none';
-
-        const weight = document.getElementById('weightInput').value;
-        const topk = document.getElementById('topkInput').value || 3;
-
-        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-          statusEl.textContent = 'Выберите изображение.';
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          setStatus('Выберите изображение.', 'error');
           return;
         }
 
-        const fd = new FormData();
-        fd.append('image', fileInput.files[0]);
-        fd.append('weight_grams', weight);
-        fd.append('top_k', topk);
+        hideDecisionPanels();
+        catalogPanel.classList.add('hidden');
+        setStatus('Выполняется распознавание...', 'info');
+        isSubmitting = true;
+        submitBtn.disabled = true;
+
+        const formData = new FormData();
+        formData.append('image', file);
+        formData.append('weight_grams', document.getElementById('weightInput').value);
+        formData.append('top_k', document.getElementById('topkInput').value || '5');
 
         try {
-          const res = await fetch('/api/predict', { method: 'POST', body: fd });
-          if (!res.ok) {
-            const txt = await res.text();
-            statusEl.textContent = 'Ошибка сервера: ' + res.status + ' ' + txt;
+          const response = await fetch('/api/predict', { method: 'POST', body: formData });
+          const payload = await readJsonResponse(response);
+          if (!response.ok) {
+            throw new Error(payload.detail || `Ошибка сервера ${response.status}`);
+          }
+          lastPrediction = payload;
+          lastImageFile = file;
+          currentPredictionId = payload.prediction_id || null;
+          renderLastResult(payload);
+          renderNextStep(payload);
+          setStatus('Распознавание завершено.', 'ok');
+        } catch (error) {
+          lastPrediction = null;
+          renderErrorResult(String(error.message || error));
+          setStatus(String(error.message || error), 'error');
+        } finally {
+          isSubmitting = false;
+          submitBtn.disabled = false;
+        }
+      });
+
+      resetBtn.addEventListener('click', () => {
+        form.reset();
+        fileInput.value = '';
+        previewImg.removeAttribute('src');
+        previewImg.style.display = 'none';
+        fileTitle.textContent = 'Выберите изображение или перетащите сюда';
+        lastPrediction = null;
+        lastImageFile = null;
+        currentPredictionId = null;
+        lastResultEl.className = 'empty';
+        lastResultEl.textContent = 'Пока нет результата.';
+        hideDecisionPanels();
+        catalogPanel.classList.add('hidden');
+        setStatus('', 'info');
+      });
+
+      confirmYesBtn.addEventListener('click', async () => {
+        if (!lastPrediction || !lastPrediction.product) return;
+        try {
+          await fetch('/api/selection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selected: lastPrediction.product.product_id }),
+          });
+          hideDecisionPanels();
+          setStatus('Выбор подтвержден.', 'ok');
+        } catch (error) {
+          setStatus(`Не удалось подтвердить выбор: ${error}`, 'error');
+        }
+      });
+
+      confirmNoBtn.addEventListener('click', () => {
+        renderTopMatches();
+        setStatus('Выберите корректный вариант из ближайших или откройте полный каталог.', 'info');
+      });
+
+      openCatalogBtn.addEventListener('click', () => showCatalog());
+      catalogSearch.addEventListener('input', () => renderCatalog(catalogSearch.value));
+      pollLatestPrediction();
+      setInterval(pollLatestPrediction, 1500);
+
+      async function pollLatestPrediction() {
+        if (isSubmitting) return;
+        try {
+          const response = await fetch('/api/predictions/latest', { cache: 'no-store' });
+          const payload = await readJsonResponse(response);
+          if (!response.ok || payload.status !== 'ok' || !payload.prediction) return;
+          const prediction = payload.prediction;
+          const predictionId = payload.prediction_id || prediction.prediction_id;
+          if (!predictionId || predictionId === currentPredictionId) return;
+
+          lastPrediction = prediction;
+          lastImageFile = null;
+          currentPredictionId = predictionId;
+          catalogPanel.classList.add('hidden');
+          renderLastResult(prediction);
+          renderNextStep(prediction);
+          setStatus('Получено новое распознавание из API.', 'info');
+        } catch (_error) {
+          return;
+        }
+      }
+
+      function renderNextStep(payload) {
+        hideDecisionPanels();
+        if (payload.status === 'ok' && payload.product) {
+          confirmText.textContent = `Распознан ${formatMatchName(payload.product)}. Подтвердите, что это правильный продукт.`;
+          confirmPanel.classList.remove('hidden');
+          return;
+        }
+        if (payload.status === 'error' && (lastImageFile || payload.prediction_id) && !payload.warning_code) {
+          openCatalogBtn.textContent = 'Выбрать сорт вручную';
+          topMatchesEl.innerHTML = '<div class="empty">Ближайших вариантов нет.</div>';
+          topMatchesPanel.classList.remove('hidden');
+        }
+      }
+
+      function renderLastResult(payload) {
+        const state = payload.status || 'error';
+        lastResultEl.className = `result-state ${state}`;
+        if (state === 'ok' && payload.product) {
+          const product = payload.product;
+          lastResultEl.innerHTML = `
+            <div class="result-title">${escapeHtml(formatMatchName(product))}</div>
+            <div>${escapeHtml(payload.message || 'Продукт распознан.')}</div>
+            <div class="result-meta">
+              <div class="metric"><div class="metric-label">Score</div><div class="metric-value">${formatScore(product.score)}</div></div>
+              <div class="metric"><div class="metric-label">Вес</div><div class="metric-value">${formatNumber(payload.weight_grams)} г</div></div>
+              <div class="metric"><div class="metric-label">Цена за кг</div><div class="metric-value">${formatPrice(product.price_rub_per_kg)}</div></div>
+              <div class="metric"><div class="metric-label">Итого</div><div class="metric-value">${formatTotal(payload.total_price)}</div></div>
+            </div>
+          `;
+          return;
+        }
+
+        const title = state === 'warning' ? 'Распознавание остановлено' : 'Ошибка распознавания';
+        lastResultEl.innerHTML = `
+          <div class="result-title">${title}</div>
+          <div>${escapeHtml(payload.message || 'Нет результата.')}</div>
+          ${payload.warning_code ? `<div class="result-meta"><div class="metric"><div class="metric-label">Код</div><div class="metric-value">${escapeHtml(payload.warning_code)}</div></div></div>` : ''}
+        `;
+      }
+
+      function renderErrorResult(message) {
+        lastResultEl.className = 'result-state error';
+        lastResultEl.innerHTML = `<div class="result-title">Ошибка запроса</div><div>${escapeHtml(message)}</div>`;
+      }
+
+      function renderTopMatches() {
+        hideDecisionPanels();
+        const bestId = lastPrediction && lastPrediction.product ? lastPrediction.product.product_id : null;
+        const matches = (lastPrediction && lastPrediction.top_matches ? lastPrediction.top_matches : [])
+          .filter((match) => match.product_id !== bestId);
+
+        topMatchesEl.innerHTML = '';
+        if (matches.length === 0) {
+          topMatchesEl.innerHTML = '<div class="empty">Других ближайших вариантов нет.</div>';
+        } else {
+          for (const match of matches) {
+            topMatchesEl.appendChild(createMatchButton(match));
+          }
+        }
+        openCatalogBtn.textContent = 'Нет в списке';
+        topMatchesPanel.classList.remove('hidden');
+      }
+
+      function createMatchButton(match) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'match-card';
+        button.addEventListener('click', () => submitIncorrectFeedback(match.name || labelFromMatch(match), 'top_k'));
+
+        const image = document.createElement('img');
+        const imagePath = imagePathFromMatch(match);
+        if (imagePath) {
+          image.src = `/api/serve_image?p=${encodeURIComponent(imagePath.replace(/\\/g, '/'))}`;
+          image.onerror = () => image.removeAttribute('src');
+        }
+        image.alt = '';
+
+        const body = document.createElement('div');
+        body.innerHTML = `
+          <div class="match-name">${escapeHtml(formatMatchName(match))}</div>
+          <div class="match-details">score ${formatScore(match.score)} · ${formatPrice(match.price_rub_per_kg)}</div>
+        `;
+
+        button.appendChild(image);
+        button.appendChild(body);
+        return button;
+      }
+
+      async function showCatalog() {
+        hideDecisionPanels();
+        catalogPanel.classList.remove('hidden');
+        catalogSearch.focus();
+        if (!catalogItems) {
+          catalogList.innerHTML = '<div class="empty">Загрузка каталога...</div>';
+          try {
+            const response = await fetch('/api/catalog/varieties');
+            const payload = await readJsonResponse(response);
+            if (!response.ok) throw new Error(payload.detail || 'Не удалось загрузить каталог.');
+            catalogItems = payload.items || [];
+          } catch (error) {
+            catalogList.innerHTML = `<div class="empty">${escapeHtml(String(error.message || error))}</div>`;
             return;
           }
-          const data = await res.json();
-          // suppress a noisy backend message "Товар распознан." — show other messages or fallback to 'Готово'
-          const backendMsg = data && data.message ? String(data.message).trim() : '';
-          if (backendMsg && backendMsg !== 'Товар распознан.' && backendMsg !== 'Товар распознан') {
-            statusEl.textContent = backendMsg;
-          } else {
-            statusEl.textContent = 'Готово';
-          }
-          renderMatches(data.top_matches || []);
-        } catch (err) {
-          statusEl.textContent = 'Ошибка: ' + err;
         }
-      });
+        renderCatalog(catalogSearch.value);
+      }
 
-      function renderMatches(matches) {
-        matchesEl.innerHTML = '';
-        document.getElementById('results').style.display = 'block';
-        if (!matches || matches.length === 0) {
-          matchesEl.textContent = 'Совпадений не найдено.';
-          // show "not match" as an option even if no matches
-          notMatchBtn.style.display = 'inline-block';
+      function renderCatalog(query) {
+        const normalizedQuery = String(query || '').trim().toLowerCase();
+        const items = (catalogItems || []).filter((item) => {
+          const haystack = `${item.label} ${item.product_type} ${item.product_sort}`.toLowerCase();
+          return !normalizedQuery || haystack.includes(normalizedQuery);
+        }).slice(0, 120);
+
+        catalogList.innerHTML = '';
+        if (items.length === 0) {
+          catalogList.innerHTML = '<div class="empty">Сорт не найден.</div>';
           return;
         }
 
-        for (const m of matches) {
-          const card = document.createElement('div');
-          card.className = 'card';
-
-          const title = document.createElement('div');
-          title.className = 'title';
-          title.textContent = m.name || m.product_id || '—';
-          card.appendChild(title);
-
-          const img = document.createElement('img');
-          // metadata.path is expected from /api/predict
-          let imgPath = null;
-          if (m.metadata && m.metadata.path) imgPath = m.metadata.path;
-          else if (m.metadata && m.metadata.filename) imgPath = m.metadata.filename;
-
-          if (imgPath) {
-            // normalize backslashes to forward slashes for URL safety and add cache-busting
-            const safePath = imgPath.replace(/\\/g, '/');
-            img.src = '/api/serve_image?p=' + encodeURIComponent(safePath) + '&_t=' + Date.now();
-            img.onerror = () => {
-              img.alt = 'Изображение недоступно';
-              img.style.opacity = '0.6';
-              img.src = '';
-            };
-          } else {
-            img.alt = 'Изображение недоступно';
-          }
-          card.appendChild(img);
-
-          const score = document.createElement('div');
-          score.className = 'score';
-          score.textContent = 'score: ' + (m.score ? m.score.toFixed(3) : '—');
-          card.appendChild(score);
-
-          // make whole card clickable to select the product
-          card.addEventListener('click', () => selectMatch(m.product_id));
-
-          matchesEl.appendChild(card);
+        for (const item of items) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'catalog-item';
+          button.addEventListener('click', () => submitIncorrectFeedback(item.label, 'catalog'));
+          button.innerHTML = `
+            <span>
+              <span class="catalog-label">${escapeHtml(item.label)}</span><br />
+              <span class="match-details">${escapeHtml(item.product_type)} · ${escapeHtml(item.product_sort)}</span>
+            </span>
+            <span class="catalog-price">${formatPrice(item.price_rub_per_kg)}</span>
+          `;
+          catalogList.appendChild(button);
         }
-
-        // show "not match" after results are rendered
-        notMatchBtn.style.display = 'inline-block';
       }
 
-      async function selectMatch(productId) {
+      async function submitIncorrectFeedback(label, selectedFrom) {
+        if (!lastPrediction || (!lastImageFile && !lastPrediction.prediction_id)) {
+          setStatus('Нет изображения или сохраненного результата распознавания.', 'error');
+          return;
+        }
+        const formData = new FormData();
+        if (lastImageFile) {
+          formData.append('image', lastImageFile);
+        }
+        if (lastPrediction.prediction_id) {
+          formData.append('prediction_id', lastPrediction.prediction_id);
+        }
+        formData.append('correct_label', label);
+        formData.append('selected_from', selectedFrom);
+        formData.append('prediction_json', JSON.stringify({
+          prediction_id: lastPrediction.prediction_id,
+          created_at: lastPrediction.created_at,
+          status: lastPrediction.status,
+          message: lastPrediction.message,
+          warning_code: lastPrediction.warning_code,
+          weight_grams: lastPrediction.weight_grams,
+          product: lastPrediction.product,
+          top_matches: lastPrediction.top_matches || [],
+        }));
+
+        setStatus('Сохраняем пример для дообучения...', 'info');
         try {
-          const res = await fetch('/api/selection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selected: productId }) });
-          const json = await res.json();
-          // hide match cards and show confirmation overlay
-          matchesEl.innerHTML = '';
-          document.getElementById('results').style.display = 'none';
-          notMatchBtn.style.display = 'none';
-          showSelectionToast('Товар добавлен в корзину');
-        } catch (err) {
-          statusEl.textContent = 'Ошибка при выборе: ' + err;
+          const response = await fetch('/api/feedback/incorrect', { method: 'POST', body: formData });
+          const payload = await readJsonResponse(response);
+          if (!response.ok) throw new Error(payload.detail || 'Не удалось сохранить feedback.');
+          hideDecisionPanels();
+          catalogPanel.classList.add('hidden');
+          setStatus(`Сохранено для дообучения: ${payload.label}`, 'ok');
+        } catch (error) {
+          setStatus(String(error.message || error), 'error');
         }
       }
 
-      let selectionToastTimeout = null;
-      function hideSelectionToast() {
-        const toast = document.getElementById('selectionToast');
-        if (!toast) return;
-        if (selectionToastTimeout) { clearTimeout(selectionToastTimeout); selectionToastTimeout = null; }
-        toast.classList.remove('show');
-        toast.setAttribute('aria-hidden', 'true');
-        setTimeout(() => { toast.style.display = 'none'; }, 260);
+      function hideDecisionPanels() {
+        confirmPanel.classList.add('hidden');
+        topMatchesPanel.classList.add('hidden');
       }
 
-      function showSelectionToast(message) {
-        const toast = document.getElementById('selectionToast');
-        if (!toast) return;
-        const text = toast.querySelector('.toast-text');
-        if (text) text.textContent = message;
-        toast.style.display = 'flex';
-        toast.setAttribute('aria-hidden', 'false');
-        // trigger animation
-        requestAnimationFrame(() => toast.classList.add('show'));
-        // attach click-to-dismiss handler once
-        if (!toast.__dismissInitialized) {
-          toast.addEventListener('click', hideSelectionToast);
-          toast.__dismissInitialized = true;
-        }
-        // auto-hide after 2.2s, keep reference so we can clear it on click
-        selectionToastTimeout = setTimeout(() => {
-          hideSelectionToast();
-        }, 2200);
-      }
-
-      notMatchBtn.addEventListener('click', async () => {
+      async function readJsonResponse(response) {
+        const text = await response.text();
+        if (!text) return {};
         try {
-          const res = await fetch('/api/selection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selected: 'none' }) });
-          const json = await res.json();
-          statusEl.textContent = 'Отмечено как "не тот товар".';
-        } catch (err) {
-          statusEl.textContent = 'Ошибка при отправке: ' + err;
+          return JSON.parse(text);
+        } catch (_error) {
+          return { detail: text };
         }
-      });
+      }
+
+      function setStatus(message, kind) {
+        statusEl.textContent = message;
+        statusEl.style.color = kind === 'error' ? 'var(--danger)' : kind === 'ok' ? 'var(--success)' : 'var(--muted)';
+      }
+
+      function formatMatchName(match) {
+        return match.name || labelFromMatch(match);
+      }
+
+      function labelFromMatch(match) {
+        if (!match) return '';
+        if (match.product_type && match.product_sort) return `${match.product_type}_${match.product_sort}`;
+        return match.product_id || '';
+      }
+
+      function imagePathFromMatch(match) {
+        if (!match || !match.metadata) return null;
+        return match.metadata.path || match.metadata.source_path || match.metadata.filename || null;
+      }
+
+      function formatScore(value) {
+        return typeof value === 'number' ? value.toFixed(3) : 'нет';
+      }
+
+      function formatNumber(value) {
+        return typeof value === 'number' ? value.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) : 'нет';
+      }
+
+      function formatPrice(value) {
+        return typeof value === 'number' ? `${value.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽/кг` : 'цены нет';
+      }
+
+      function formatTotal(value) {
+        return typeof value === 'number' ? `${value.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽` : 'нет';
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#039;',
+        }[char]));
+      }
     </script>
   </body>
 </html>

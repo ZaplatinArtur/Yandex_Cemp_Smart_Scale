@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from smart_scale.api.errors import ServiceUnavailableError
+from smart_scale.api.prediction_history import PredictionHistory
 from smart_scale.api.routes import router
 from smart_scale.api.routes.ui import ui_router
 from smart_scale.config import Settings, get_settings
@@ -40,6 +41,7 @@ def create_app(
 
         app.state.pipeline = pipeline
         app.state.settings = resolved_settings
+        app.state.prediction_history = PredictionHistory(resolved_settings.prediction_history_dir)
 
         health = pipeline.health_status()
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)

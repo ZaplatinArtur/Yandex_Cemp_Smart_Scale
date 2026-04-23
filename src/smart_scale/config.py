@@ -41,6 +41,8 @@ class Settings:
     products_csv: Path
     dataset_dir: Path
     price_catalog_path: Path
+    feedback_dir: Path
+    prediction_history_dir: Path
     embedding_model_name: str
     embedding_checkpoint_path: Path | None
     vector_db_path: Path
@@ -98,6 +100,14 @@ class Settings:
                 os.getenv("SMART_SCALE_PRICE_CATALOG"),
                 PROJECT_ROOT / "data" / "product_prices.py",
             ),
+            feedback_dir=_as_path(
+                os.getenv("SMART_SCALE_FEEDBACK_DIR"),
+                PROJECT_ROOT / "data" / "feedback" / "incorrect",
+            ),
+            prediction_history_dir=_as_path(
+                os.getenv("SMART_SCALE_PREDICTION_HISTORY_DIR"),
+                PROJECT_ROOT / ".runtime" / "predictions",
+            ),
             embedding_model_name=os.getenv("SMART_SCALE_EMBEDDING_MODEL_NAME", "facebook/dinov2-small"),
             embedding_checkpoint_path=embedding_checkpoint_path,
             vector_db_path=_as_path(
@@ -132,7 +142,7 @@ class Settings:
             ),
             catalog_yolo_enabled=_as_bool(os.getenv("SMART_SCALE_CATALOG_YOLO"), False),
             embedding_dim=int(os.getenv("SMART_SCALE_EMBEDDING_DIM", default_embedding_dim)),
-            samples_per_sort=int(os.getenv("SMART_SCALE_SAMPLES_PER_SORT", "5")),
+            samples_per_sort=int(os.getenv("SMART_SCALE_SAMPLES_PER_SORT", "10")),
             weight_stability_tolerance=float(os.getenv("SMART_SCALE_WEIGHT_TOLERANCE", "2.0")),
             weight_stability_window=int(os.getenv("SMART_SCALE_WEIGHT_WINDOW", "5")),
         )
