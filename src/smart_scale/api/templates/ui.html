@@ -1219,7 +1219,7 @@
       }
 
       function isEmptyPrediction(payload) {
-        return !!payload && (payload.status === 'empty' || payload.weight_grams === 0);
+        return !!payload && (payload.status === 'empty' || payload.weight_grams < 50);
       }
 
       function uniqueMatchesBySort(matches) {
