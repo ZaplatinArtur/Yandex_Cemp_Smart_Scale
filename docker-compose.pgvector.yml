@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: smart-scale-pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: smart_scale
+      POSTGRES_USER: smart_scale
+      POSTGRES_PASSWORD: smart_scale
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+
+volumes:
+  pgvector_data:

@@ -1,0 +1,1325 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Scale UI</title>
+    <style>
+      :root {
+        --bg: #edf7eb;
+        --surface: rgba(249, 255, 247, 0.94);
+        --surface-strong: #ffffff;
+        --surface-muted: #ddf0d7;
+        --line: #bddbb9;
+        --line-strong: #93c08e;
+        --text: #213625;
+        --muted: #617764;
+        --accent: #6fa15f;
+        --accent-strong: #4f7f48;
+        --success: #4f884f;
+        --warning: #8d9d3d;
+        --danger: #b86d58;
+        --shadow: 0 22px 54px rgba(73, 111, 62, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: "Manrope", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top right, rgba(213, 239, 178, 0.58), transparent 28%),
+          radial-gradient(circle at top left, rgba(198, 232, 202, 0.46), transparent 34%),
+          linear-gradient(180deg, #f8fff6 0%, #e9f6e7 100%);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.22;
+        background-image:
+          linear-gradient(rgba(102, 143, 97, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(102, 143, 97, 0.08) 1px, transparent 1px);
+        background-size: 24px 24px;
+      }
+
+      .container {
+        position: relative;
+        max-width: 1360px;
+        margin: 0 auto;
+        padding: 28px 20px 36px;
+      }
+
+      .header,
+      .panel {
+        border: 1px solid rgba(147, 192, 142, 0.42);
+        background: var(--surface);
+        backdrop-filter: blur(10px);
+        box-shadow: var(--shadow);
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 18px 22px;
+        border-radius: 30px;
+      }
+
+      .logo {
+        width: 54px;
+        height: 54px;
+        display: grid;
+        place-items: center;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #8fc96f 0%, #4f7f48 100%);
+        color: #fffdf8;
+        font-size: 1.4rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+      }
+
+      .brand-title {
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .brand-subtitle {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 0.98rem;
+      }
+
+      .panel {
+        border-radius: 34px;
+        padding: 24px;
+      }
+
+      .page {
+        display: grid;
+        gap: 22px;
+        margin-top: 22px;
+      }
+
+      .result-shell {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 24px;
+        align-items: start;
+      }
+
+      .result-media {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+      }
+
+      .result-image-frame {
+        position: relative;
+        width: 360px;
+        height: 360px;
+        flex: 0 0 auto;
+        border-radius: 30px;
+        padding: 8px;
+        border: 1px solid rgba(129, 182, 121, 0.45);
+        background:
+          linear-gradient(145deg, rgba(241, 251, 232, 0.98) 0%, rgba(207, 233, 187, 0.94) 52%, rgba(182, 218, 168, 0.96) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.7),
+          0 18px 34px rgba(96, 140, 88, 0.16);
+        overflow: hidden;
+      }
+
+      .result-image-frame::after {
+        content: "";
+        position: absolute;
+        inset: 7px;
+        border: 1px solid rgba(244, 253, 239, 0.72);
+        border-radius: 24px;
+        pointer-events: none;
+      }
+
+      .result-image-frame img {
+        position: relative;
+        z-index: 1;
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.38);
+        object-fit: cover;
+        object-position: center;
+        border: 2px solid rgba(147, 192, 142, 0.5);
+        box-shadow: 0 8px 20px rgba(79, 127, 72, 0.15), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+      }
+
+      .result-details {
+        display: grid;
+        width: 100%;
+        align-content: start;
+        gap: 18px;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: fit-content;
+        padding: 8px 14px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-size: 0.88rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .status-chip::before {
+        content: "";
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .status-chip.empty {
+        color: var(--muted);
+        background: rgba(97, 119, 100, 0.08);
+        border-color: rgba(97, 119, 100, 0.16);
+      }
+
+      .status-chip.ok {
+        color: var(--success);
+        background: rgba(79, 136, 79, 0.1);
+        border-color: rgba(79, 136, 79, 0.2);
+      }
+
+      .status-chip.warning {
+        color: var(--warning);
+        background: rgba(141, 157, 61, 0.12);
+        border-color: rgba(141, 157, 61, 0.24);
+      }
+
+      .status-chip.error {
+        color: var(--danger);
+        background: rgba(184, 109, 88, 0.12);
+        border-color: rgba(184, 109, 88, 0.2);
+      }
+
+      .identity-grid,
+      .metric-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .identity-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .metric-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .info-card {
+        min-height: 78px;
+        padding: 10px 14px;
+        border-radius: 20px;
+        border: 1px solid rgba(147, 192, 142, 0.3);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .info-label {
+        color: var(--muted);
+        font-size: 0.84rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .info-value {
+        margin-top: 6px;
+        font-size: 1.18rem;
+        font-weight: 800;
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+      }
+
+      .actions {
+        display: grid;
+        gap: 12px;
+        align-items: stretch;
+      }
+
+      .result-actions {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .form-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      button {
+        min-height: 48px;
+        border-radius: 18px;
+        border: 1px solid transparent;
+        padding: 10px 18px;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+      }
+
+      .actions button {
+        width: 100%;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        line-height: 1.2;
+      }
+
+      button:hover:not(:disabled) {
+        transform: translateY(-1px);
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #7db56f 0%, #4f7f48 100%);
+        color: #fffdf8;
+        box-shadow: 0 12px 24px rgba(79, 127, 72, 0.2);
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: linear-gradient(135deg, #72aa65 0%, #466f40 100%);
+      }
+
+      .btn-secondary {
+        background: rgba(240, 249, 234, 0.9);
+        border-color: rgba(147, 192, 142, 0.44);
+        color: var(--text);
+      }
+
+      .btn-ghost {
+        background: rgba(111, 161, 95, 0.1);
+        border-color: rgba(111, 161, 95, 0.24);
+        color: var(--accent-strong);
+      }
+
+      .btn-danger {
+        background: rgba(184, 109, 88, 0.12);
+        border-color: rgba(184, 109, 88, 0.24);
+        color: var(--danger);
+      }
+
+      .status-line {
+        min-height: 52px;
+        padding: 12px 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(147, 192, 142, 0.26);
+        background: rgba(243, 251, 240, 0.85);
+        color: var(--muted);
+        font-weight: 700;
+        line-height: 1.35;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .workspace-panel {
+        min-height: 320px;
+      }
+
+      .workspace-panel.compact {
+        min-height: 0;
+      }
+
+      .workspace-panel.compact .workspace-section {
+        margin-top: 12px;
+      }
+
+      .workspace-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: start;
+      }
+
+      .workspace-title {
+        margin: 0;
+        font-size: 1.55rem;
+        font-weight: 800;
+      }
+
+      .workspace-hint {
+        margin: 8px 0 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .workspace-section {
+        margin-top: 18px;
+      }
+
+      .workspace-section h3 {
+        margin: 0 0 12px;
+        font-size: 1.08rem;
+      }
+
+      .match-list,
+      .catalog-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .catalog-list {
+        max-height: 450px;
+        overflow-y: auto;
+        padding-right: 6px;
+        align-content: start;
+      }
+
+      .match-card,
+      .catalog-item {
+        width: 100%;
+        border-radius: 22px;
+        border: 1px solid rgba(147, 192, 142, 0.34);
+        background: rgba(248, 255, 246, 0.82);
+        text-align: left;
+      }
+
+      .match-card {
+        display: grid;
+        grid-template-columns: 110px minmax(0, 1fr);
+        gap: 14px;
+        align-items: center;
+        padding: 12px;
+      }
+
+      .match-card img {
+        width: 110px;
+        height: 90px;
+        object-fit: cover;
+        border-radius: 18px;
+        background: var(--surface-muted);
+        border: 1.5px solid rgba(147, 192, 142, 0.45);
+        box-shadow: 0 4px 12px rgba(79, 127, 72, 0.12);
+      }
+
+      .match-name,
+      .catalog-label {
+        font-weight: 800;
+        overflow-wrap: anywhere;
+      }
+
+      .match-details,
+      .catalog-price {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .catalog-tools {
+        margin-bottom: 12px;
+      }
+
+      .catalog-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        padding: 14px 16px;
+      }
+
+      input[type="search"],
+      input[type="text"],
+      input[type="password"],
+      input[type="number"] {
+        width: 100%;
+        min-height: 46px;
+        padding: 10px 14px;
+        border-radius: 16px;
+        border: 1px solid rgba(147, 192, 142, 0.42);
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--text);
+        font: inherit;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-size: 0.92rem;
+        font-weight: 700;
+      }
+
+      .field + .field {
+        margin-top: 12px;
+      }
+
+      .admin-form-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        align-items: start;
+      }
+
+      .admin-auth-form,
+      .admin-entry-form {
+        width: 100%;
+      }
+
+      .admin-auth-form {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+        gap: 12px;
+        align-items: end;
+      }
+
+      .admin-entry-form {
+        display: grid;
+        gap: 12px;
+      }
+
+      .admin-auth-form .field,
+      .admin-form-grid .field {
+        display: flex;
+        flex-direction: column;
+        margin-top: 0;
+      }
+
+      .admin-auth-form label,
+      .admin-form-grid label {
+        min-height: 20px;
+      }
+
+      .admin-auth-form input[type="password"],
+      .admin-form-grid input[type="text"],
+      .admin-form-grid input[type="number"] {
+        min-height: 42px;
+      }
+
+      .admin-auth-form .actions,
+      .admin-entry-form .actions {
+        margin-top: 0;
+      }
+
+      .admin-auth-form .actions button,
+      .admin-entry-form .actions button {
+        white-space: nowrap;
+      }
+
+      .empty {
+        padding: 18px;
+        border-radius: 20px;
+        border: 1px dashed rgba(147, 192, 142, 0.4);
+        color: var(--muted);
+        background: rgba(245, 252, 241, 0.7);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      @media (max-width: 940px) {
+        .container {
+          padding: 18px 14px 28px;
+        }
+
+        .header,
+        .panel {
+          border-radius: 24px;
+        }
+
+        .result-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .result-media {
+          min-height: 0;
+        }
+
+        .identity-grid,
+        .metric-grid,
+        .admin-form-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .workspace-header {
+          flex-direction: column;
+        }
+
+        .match-card {
+          grid-template-columns: 1fr;
+        }
+
+        .match-card img {
+          width: 100%;
+          height: 180px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <div class="logo">УВ</div>
+        <div>
+          <div class="brand-title">Умные весы</div>
+          <div id="brandSubtitle" class="brand-subtitle">Грустный перевесик</div>
+        </div>
+      </header>
+
+      <main class="page">
+        <section class="panel result-shell">
+          <div class="result-media">
+            <div class="result-image-frame">
+              <img id="latestResultImage" src="/api/serve_image?p=mem.jpg" alt="На весах ничего нет" loading="lazy" />
+            </div>
+          </div>
+
+          <div class="result-details">
+            <div id="resultStatusChip" class="status-chip empty">Ожидание</div>
+
+            <div class="identity-grid">
+              <div class="info-card">
+                <div class="info-label">Тип</div>
+                <div id="resultType" class="info-value">—</div>
+              </div>
+              <div class="info-card">
+                <div class="info-label">Сорт</div>
+                <div id="resultSort" class="info-value">—</div>
+              </div>
+            </div>
+
+            <div class="metric-grid">
+              <div class="info-card">
+                <div class="info-label">Вес</div>
+                <div id="metricWeight" class="info-value">—</div>
+              </div>
+              <div class="info-card">
+                <div class="info-label">Цена</div>
+                <div id="metricPrice" class="info-value">—</div>
+              </div>
+              <div class="info-card">
+                <div class="info-label">Итого</div>
+                <div id="metricTotal" class="info-value">—</div>
+              </div>
+            </div>
+
+            <div class="actions result-actions">
+              <button type="button" class="btn-primary" id="confirmYesBtn" disabled>Все верно</button>
+              <button type="button" class="btn-secondary" id="confirmNoBtn" disabled>Изменить товар</button>
+              <button type="button" class="btn-ghost" id="adminAddBtn" disabled>Внести в каталог</button>
+            </div>
+
+            <div id="status" class="status-line">
+              Ждем новое распознавание
+            </div>
+          </div>
+        </section>
+
+        <section id="workspacePanel" class="panel workspace-panel hidden">
+          <div class="workspace-header">
+            <div>
+              <h2 id="workspaceTitle" class="workspace-title">Рабочая область</h2>
+              <p id="workspaceHint" class="workspace-hint">
+                Выберите действие
+              </p>
+            </div>
+          </div>
+
+          <section id="topMatchesSection" class="workspace-section hidden">
+            <h3>Ближайшие варианты</h3>
+            <div id="topMatches" class="match-list"></div>
+            <div class="actions" style="margin-top: 14px;">
+              <button type="button" class="btn-secondary" id="openCatalogBtn">Нет в списке</button>
+            </div>
+          </section>
+
+          <section id="catalogSection" class="workspace-section hidden">
+            <h3>Полный каталог сортов</h3>
+            <div class="catalog-tools">
+              <input type="search" id="catalogSearch" placeholder="Найти сорт, например apple_fuji" />
+            </div>
+            <div id="catalogList" class="catalog-list"></div>
+          </section>
+
+          <section id="adminSection" class="workspace-section hidden">
+            <form id="adminAuthForm" class="admin-auth-form">
+              <div class="field">
+                <label for="adminTokenInput">Пароль администратора</label>
+                <input type="password" id="adminTokenInput" autocomplete="current-password" required />
+              </div>
+
+              <div class="actions form-actions">
+                <button type="submit" class="btn-primary" id="adminAuthBtn">Продолжить</button>
+                <button type="button" class="btn-secondary" id="adminAuthCancelBtn">Отмена</button>
+              </div>
+            </form>
+
+            <form id="adminAddForm" class="admin-entry-form hidden">
+              <div class="admin-form-grid">
+                <div class="field">
+                  <label for="adminProductTypeInput">Тип продукта</label>
+                  <input
+                    type="text"
+                    id="adminProductTypeInput"
+                    list="adminProductTypeOptions"
+                    placeholder="apple"
+                    pattern="[a-z0-9]+"
+                    required
+                  />
+                  <datalist id="adminProductTypeOptions"></datalist>
+                </div>
+
+                <div class="field">
+                  <label for="adminProductSortInput">Сорт</label>
+                  <input
+                    type="text"
+                    id="adminProductSortInput"
+                    list="adminProductSortOptions"
+                    placeholder="fuji"
+                    pattern="[a-z0-9_]+"
+                    required
+                  />
+                  <datalist id="adminProductSortOptions"></datalist>
+                </div>
+
+                <div class="field">
+                  <label for="adminPriceInput">Цена за кг, ₽</label>
+                  <input type="number" id="adminPriceInput" min="0.01" step="0.01" required />
+                </div>
+              </div>
+
+              <div class="actions form-actions">
+                <button type="submit" class="btn-primary" id="adminSubmitBtn">Сохранить</button>
+                <button type="button" class="btn-secondary" id="adminCancelBtn">Отмена</button>
+              </div>
+            </form>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const idleImageSrc = '/api/serve_image?p=mem.jpg&t=' + Date.now();
+
+      const latestResultImage = document.getElementById('latestResultImage');
+      const resultStatusChip = document.getElementById('resultStatusChip');
+      const resultType = document.getElementById('resultType');
+      const resultSort = document.getElementById('resultSort');
+      const metricWeight = document.getElementById('metricWeight');
+      const metricPrice = document.getElementById('metricPrice');
+      const metricTotal = document.getElementById('metricTotal');
+      const statusEl = document.getElementById('status');
+
+      const confirmYesBtn = document.getElementById('confirmYesBtn');
+      const confirmNoBtn = document.getElementById('confirmNoBtn');
+      const adminAddBtn = document.getElementById('adminAddBtn');
+
+      const workspaceTitle = document.getElementById('workspaceTitle');
+      const workspaceHint = document.getElementById('workspaceHint');
+      const workspacePanel = document.getElementById('workspacePanel');
+
+      const topMatchesSection = document.getElementById('topMatchesSection');
+      const topMatchesEl = document.getElementById('topMatches');
+      const openCatalogBtn = document.getElementById('openCatalogBtn');
+
+      const catalogSection = document.getElementById('catalogSection');
+      const catalogSearch = document.getElementById('catalogSearch');
+      const catalogList = document.getElementById('catalogList');
+
+      const adminSection = document.getElementById('adminSection');
+      const adminAuthForm = document.getElementById('adminAuthForm');
+      const adminAddForm = document.getElementById('adminAddForm');
+      const adminTokenInput = document.getElementById('adminTokenInput');
+      const adminAuthBtn = document.getElementById('adminAuthBtn');
+      const adminAuthCancelBtn = document.getElementById('adminAuthCancelBtn');
+      const adminProductTypeInput = document.getElementById('adminProductTypeInput');
+      const adminProductSortInput = document.getElementById('adminProductSortInput');
+      const adminProductTypeOptions = document.getElementById('adminProductTypeOptions');
+      const adminProductSortOptions = document.getElementById('adminProductSortOptions');
+      const adminPriceInput = document.getElementById('adminPriceInput');
+      const adminSubmitBtn = document.getElementById('adminSubmitBtn');
+      const adminCancelBtn = document.getElementById('adminCancelBtn');
+      const brandSubtitle = document.getElementById('brandSubtitle');
+
+      let lastPrediction = null;
+      let currentPredictionId = null;
+      let catalogItems = null;
+      let verifiedAdminToken = '';
+
+      confirmYesBtn.addEventListener('click', submitConfirmedSelection);
+      confirmNoBtn.addEventListener('click', () => {
+        renderTopMatches();
+        setStatus('Выберите подходящий товар в списке', 'info');
+      });
+      adminAddBtn.addEventListener('click', () => {
+        showAdminAddForm();
+      });
+
+      openCatalogBtn.addEventListener('click', () => {
+        showCatalog();
+      });
+      catalogSearch.addEventListener('input', () => renderCatalog(catalogSearch.value));
+
+      adminAuthForm.addEventListener('submit', (event) => verifyAdminAccess(event));
+      adminAuthCancelBtn.addEventListener('click', () => {
+        resetAdminFlow();
+        hideWorkspace();
+      });
+      adminProductTypeInput.addEventListener('input', () => populateAdminOptions());
+      adminAddForm.addEventListener('submit', (event) => submitAdminCatalogExample(event));
+      adminCancelBtn.addEventListener('click', () => {
+        resetAdminFlow();
+        hideWorkspace();
+      });
+
+      latestResultImage.addEventListener('error', () => {
+        latestResultImage.src = idleImageSrc;
+        latestResultImage.alt = 'На весах ничего нет';
+      });
+
+      pollLatestPrediction();
+      setInterval(pollLatestPrediction, 1500);
+
+      async function pollLatestPrediction() {
+        try {
+          const response = await fetch('/api/predictions/latest', { cache: 'no-store' });
+          const payload = await readJsonResponse(response);
+          if (!response.ok) return;
+
+          if (payload.status === 'empty' || !payload.prediction) {
+            if (currentPredictionId !== null) {
+              currentPredictionId = null;
+              lastPrediction = null;
+              renderIdleResult();
+              hideWorkspace();
+              setStatus('Ждем новое распознавание', 'info');
+            }
+            return;
+          }
+
+          if (payload.status !== 'ok') return;
+
+          const prediction = payload.prediction;
+          const predictionId = payload.prediction_id || prediction.prediction_id;
+          if (!predictionId || predictionId === currentPredictionId) return;
+
+          currentPredictionId = predictionId;
+          lastPrediction = {
+            ...prediction,
+            prediction_id: predictionId,
+          };
+          adminAddForm.reset();
+          catalogSearch.value = '';
+
+          renderLastResult(lastPrediction);
+          if (lastPrediction.status === 'error' && !lastPrediction.warning_code) {
+            renderTopMatches(true);
+            return;
+          }
+
+          hideWorkspace();
+        } catch (_error) {
+          return;
+        }
+      }
+
+      async function submitConfirmedSelection() {
+        if (!lastPrediction || !lastPrediction.product) return;
+        try {
+          await fetch('/api/selection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selected: lastPrediction.product.product_id }),
+          });
+          hideWorkspace();
+          setStatus('Выбор подтвержден', 'ok');
+        } catch (error) {
+          setStatus(`Не удалось подтвердить выбор: ${String(error.message || error)}`, 'error');
+        }
+      }
+
+      function renderLastResult(payload) {
+        if (isEmptyPrediction(payload)) {
+          renderIdleResult();
+          return;
+        }
+
+        const state = payload.status || 'error';
+        const product = payload.product || null;
+        const predictionId = payload.prediction_id || currentPredictionId;
+
+        resultStatusChip.className = `status-chip ${state}`;
+        resultStatusChip.textContent = stateLabel(state);
+
+        latestResultImage.src = predictionId
+          ? `/api/predictions/${encodeURIComponent(predictionId)}/image`
+          : idleImageSrc;
+        latestResultImage.alt = product
+          ? `Исходное изображение ${labelFromMatch(product)}`
+          : 'Исходное изображение товара';
+
+        resultType.textContent = product && product.product_type ? product.product_type : '—';
+        resultSort.textContent = product && product.product_sort ? product.product_sort : '—';
+        metricWeight.textContent = formatWeightKg(payload.weight_grams);
+        metricPrice.textContent = product ? formatPrice(product.price_rub_per_kg) : 'цены нет';
+        metricTotal.textContent = formatTotal(payload.total_price);
+
+        brandSubtitle.textContent = 'Веселый перевесик';
+        updateActionButtons(payload);
+        setStatus(resultMessage(payload), stateToKind(state));
+      }
+
+      function renderIdleResult() {
+        resultStatusChip.className = 'status-chip empty';
+        resultStatusChip.textContent = 'Ожидание';
+        latestResultImage.src = idleImageSrc;
+        latestResultImage.alt = 'На весах ничего нет';
+        resultType.textContent = '—';
+        resultSort.textContent = '—';
+        metricWeight.textContent = '—';
+        metricPrice.textContent = '—';
+        metricTotal.textContent = '—';
+        brandSubtitle.textContent = 'Грустный перевесик';
+        updateActionButtons(null);
+        setStatus('Ждем новое распознавание', 'info');
+      }
+
+      function updateActionButtons(payload) {
+        const hasPrediction = !!(payload && !isEmptyPrediction(payload) && (payload.prediction_id || currentPredictionId));
+        const canConfirm = !!(payload && payload.status === 'ok' && payload.product);
+        confirmYesBtn.disabled = !canConfirm;
+        confirmNoBtn.disabled = !hasPrediction;
+        adminAddBtn.disabled = !hasPrediction;
+      }
+
+      function hideWorkspace() {
+        workspacePanel.classList.add('hidden');
+        workspacePanel.classList.remove('compact');
+        resetAdminFlow();
+        topMatchesSection.classList.add('hidden');
+        catalogSection.classList.add('hidden');
+        adminSection.classList.add('hidden');
+      }
+
+      function activateWorkspace(title, hint, section) {
+        workspacePanel.classList.remove('hidden');
+        workspacePanel.classList.toggle('compact', section === adminSection);
+        workspaceTitle.textContent = title;
+        workspaceHint.textContent = hint;
+        workspaceHint.classList.toggle('hidden', !hint);
+        topMatchesSection.classList.add('hidden');
+        catalogSection.classList.add('hidden');
+        adminSection.classList.add('hidden');
+        section.classList.remove('hidden');
+      }
+
+      function renderTopMatches(autoOpened = false) {
+        activateWorkspace(
+          autoOpened ? 'Выбор продукта' : 'Выбор продукта',
+          '',
+          topMatchesSection
+        );
+
+        const matches = uniqueMatchesBySort([
+          ...(lastPrediction && lastPrediction.product ? [lastPrediction.product] : []),
+          ...(lastPrediction && lastPrediction.top_matches ? lastPrediction.top_matches : []),
+        ]);
+
+        topMatchesEl.innerHTML = '';
+        if (matches.length === 0) {
+          topMatchesEl.innerHTML = '<div class="empty">Вариантов нет</div>';
+          return;
+        }
+
+        for (const match of matches) {
+          topMatchesEl.appendChild(createMatchButton(match));
+        }
+      }
+
+      function createMatchButton(match) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'match-card';
+        button.addEventListener('click', () => submitIncorrectFeedback(match.name || labelFromMatch(match), 'top_k'));
+
+        const image = document.createElement('img');
+        const imagePath = imagePathFromMatch(match);
+        if (imagePath) {
+          image.src = `/api/serve_image?p=${encodeURIComponent(imagePath.replace(/\\/g, '/'))}`;
+          image.onerror = () => image.removeAttribute('src');
+        }
+        image.alt = '';
+
+        const body = document.createElement('div');
+        const totalPrice = (match.price_rub_per_kg * (lastPrediction?.weight_grams || 0)) / 1000;
+        body.innerHTML = `
+          <div class="match-name">${escapeHtml(labelFromMatch(match))}</div>
+          <div class="match-details">${formatPrice(match.price_rub_per_kg)} · Итого ${formatTotal(totalPrice)}</div>
+        `;
+
+        button.appendChild(image);
+        button.appendChild(body);
+        return button;
+      }
+
+      async function showCatalog() {
+        activateWorkspace(
+          'Каталог',
+          'Выбери сорт',
+          catalogSection
+        );
+        try {
+          await loadCatalogItems();
+          renderCatalog(catalogSearch.value);
+          catalogSearch.focus();
+        } catch (error) {
+          catalogList.innerHTML = `<div class="empty">${escapeHtml(String(error.message || error))}</div>`;
+        }
+      }
+
+      async function loadCatalogItems() {
+        if (catalogItems) return catalogItems;
+        catalogList.innerHTML = '<div class="empty">Загрузка...</div>';
+        const response = await fetch('/api/catalog/varieties');
+        const payload = await readJsonResponse(response);
+        if (!response.ok) throw new Error(payload.detail || 'Не удалось загрузить каталог.');
+        catalogItems = payload.items || [];
+        return catalogItems;
+      }
+
+      function renderCatalog(query) {
+        const normalizedQuery = String(query || '').trim().toLowerCase();
+        const items = (catalogItems || [])
+          .filter((item) => {
+            const haystack = `${item.label} ${item.product_type} ${item.product_sort}`.toLowerCase();
+            return !normalizedQuery || haystack.includes(normalizedQuery);
+          })
+          .slice(0, 120);
+
+        catalogList.innerHTML = '';
+        if (items.length === 0) {
+          catalogList.innerHTML = '<div class="empty">Сорт не найден.</div>';
+          return;
+        }
+
+        for (const item of items) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'catalog-item';
+          button.addEventListener('click', () => submitIncorrectFeedback(item.label, 'catalog'));
+          const totalPrice = (item.price_rub_per_kg * (lastPrediction?.weight_grams || 0)) / 1000;
+          button.innerHTML = `
+            <span>
+              <span class="catalog-label">${escapeHtml(item.label)}</span>
+              <div class="catalog-price">${formatPrice(item.price_rub_per_kg)}</div>
+            </span>
+            <span class="catalog-price">${formatTotal(totalPrice)}</span>
+          `;
+          catalogList.appendChild(button);
+        }
+      }
+
+      async function showAdminAddForm() {
+        if (!lastPrediction || !lastPrediction.prediction_id || isEmptyPrediction(lastPrediction)) {
+          setStatus('Нет снимка для добавления', 'error');
+          return;
+        }
+
+        resetAdminFlow();
+        activateWorkspace(
+          'Заполни форму',
+          '',
+          adminSection
+        );
+        setStatus('Введите пароль', 'info');
+        adminTokenInput.focus();
+      }
+
+      function resetAdminFlow() {
+        verifiedAdminToken = '';
+        adminAuthForm.reset();
+        adminAddForm.reset();
+        adminAuthForm.classList.remove('hidden');
+        adminAddForm.classList.add('hidden');
+      }
+
+      async function revealAdminDataForm(adminToken) {
+        verifiedAdminToken = adminToken;
+        adminAuthForm.classList.add('hidden');
+        adminAddForm.classList.remove('hidden');
+
+        if (lastPrediction.product && typeof lastPrediction.product.price_rub_per_kg === 'number') {
+          adminPriceInput.value = lastPrediction.product.price_rub_per_kg;
+        }
+
+        await loadCatalogItems();
+        populateAdminOptions();
+        setStatus('Введите данные', 'info');
+        adminProductTypeInput.focus();
+      }
+
+      async function verifyAdminAccess(event) {
+        event.preventDefault();
+        if (!lastPrediction || !lastPrediction.prediction_id || isEmptyPrediction(lastPrediction)) {
+          setStatus('Нет снимка для добавления', 'error');
+          return;
+        }
+
+        const adminToken = adminTokenInput.value;
+        const formData = new FormData();
+        formData.append('admin_token', adminToken);
+
+        adminAuthBtn.disabled = true;
+        setStatus('Проверяем пароль', 'info');
+        try {
+          const response = await fetch('/api/admin/verify', { method: 'POST', body: formData });
+          if (response.status === 404) {
+            throw new Error('Проверка пароля недоступна. Перезапустите сервер.');
+          }
+
+          const payload = await readJsonResponse(response);
+          if (!response.ok) {
+            throw new Error(payload.detail || 'Не удалось проверить пароль.');
+          }
+
+          await revealAdminDataForm(adminToken);
+        } catch (error) {
+          verifiedAdminToken = '';
+          setStatus(String(error.message || error), 'error');
+          adminTokenInput.focus();
+        } finally {
+          adminAuthBtn.disabled = false;
+        }
+      }
+
+      function populateAdminOptions() {
+        const items = catalogItems || [];
+        const selectedType = adminProductTypeInput.value.trim().toLowerCase();
+        const types = uniqueSorted(items.map((item) => item.product_type).filter(Boolean));
+        const sorts = uniqueSorted(
+          items
+            .filter((item) => !selectedType || item.product_type === selectedType)
+            .map((item) => item.product_sort)
+            .filter(Boolean)
+        );
+
+        adminProductTypeOptions.innerHTML = types.map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
+        adminProductSortOptions.innerHTML = sorts.map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
+      }
+
+      async function submitAdminCatalogExample(event) {
+        event.preventDefault();
+        if (!lastPrediction || !lastPrediction.prediction_id || isEmptyPrediction(lastPrediction)) {
+          setStatus('Нет снимка для добавления', 'error');
+          return;
+        }
+        if (!verifiedAdminToken) {
+          setStatus('Проверь пароль', 'error');
+          adminAuthForm.classList.remove('hidden');
+          adminAddForm.classList.add('hidden');
+          adminTokenInput.focus();
+          return;
+        }
+
+        const productType = adminProductTypeInput.value.trim().toLowerCase();
+        const productSort = adminProductSortInput.value.trim().toLowerCase();
+        if (!/^[a-z0-9]+$/.test(productType) || !/^[a-z0-9_]+$/.test(productSort)) {
+          setStatus('Проверь тип и сорт', 'error');
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('admin_token', verifiedAdminToken);
+        formData.append('product_type', productType);
+        formData.append('product_sort', productSort);
+        formData.append('price_rub_per_kg', adminPriceInput.value);
+        formData.append('prediction_id', lastPrediction.prediction_id);
+
+        adminSubmitBtn.disabled = true;
+        setStatus('Сохраняем новый сорт', 'info');
+        try {
+          const response = await fetch('/api/admin/catalog/examples', { method: 'POST', body: formData });
+          const payload = await readJsonResponse(response);
+          if (!response.ok) {
+            const detail = payload.detail || 'Не удалось добавить продукт.';
+            if (response.status === 403 && detail === 'Неверный пароль администратора') {
+              verifiedAdminToken = '';
+              adminAuthForm.classList.remove('hidden');
+              adminAddForm.classList.add('hidden');
+              adminTokenInput.focus();
+            }
+            throw new Error(detail);
+          }
+          catalogItems = null;
+          adminAddForm.reset();
+          hideWorkspace();
+          setStatus(`Сорт добавлен: ${payload.label}`, 'ok');
+        } catch (error) {
+          setStatus(String(error.message || error), 'error');
+        } finally {
+          adminSubmitBtn.disabled = false;
+        }
+      }
+
+      async function submitIncorrectFeedback(label, selectedFrom) {
+        if (!lastPrediction || !lastPrediction.prediction_id || isEmptyPrediction(lastPrediction)) {
+          setStatus('Нет снимка для выбора', 'error');
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('prediction_id', lastPrediction.prediction_id);
+        formData.append('correct_label', label);
+        formData.append('selected_from', selectedFrom);
+        formData.append('prediction_json', JSON.stringify({
+          prediction_id: lastPrediction.prediction_id,
+          created_at: lastPrediction.created_at,
+          status: lastPrediction.status,
+          message: lastPrediction.message,
+          warning_code: lastPrediction.warning_code,
+          weight_grams: lastPrediction.weight_grams,
+          product: lastPrediction.product,
+          top_matches: lastPrediction.top_matches || [],
+        }));
+
+        setStatus('Сохраняем выбор', 'info');
+        try {
+          const response = await fetch('/api/feedback/incorrect', { method: 'POST', body: formData });
+          const payload = await readJsonResponse(response);
+          if (!response.ok) throw new Error(payload.detail || 'Не удалось сохранить feedback.');
+          hideWorkspace();
+          setStatus('Выбор сохранен.', 'ok');
+        } catch (error) {
+          setStatus(String(error.message || error), 'error');
+        }
+      }
+
+      async function readJsonResponse(response) {
+        const text = await response.text();
+        if (!text) return {};
+        try {
+          return JSON.parse(text);
+        } catch (_error) {
+          return { detail: text };
+        }
+      }
+
+      function isEmptyPrediction(payload) {
+        return !!payload && (payload.status === 'empty' || payload.weight_grams < 50);
+      }
+
+      function uniqueMatchesBySort(matches) {
+        const uniqueMatches = [];
+        const seen = new Set();
+        for (const match of matches) {
+          const key = uniqueMatchKey(match);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          uniqueMatches.push(match);
+        }
+        return uniqueMatches;
+      }
+
+      function uniqueMatchKey(match) {
+        if (!match) return '';
+        if (match.product_type || match.product_sort) return `${match.product_type || ''}::${match.product_sort || ''}`;
+        return match.name || match.product_id || '';
+      }
+
+      function uniqueSorted(values) {
+        return [...new Set(values.map((value) => String(value).trim()).filter(Boolean))].sort();
+      }
+
+      function stateLabel(state) {
+        if (state === 'ok') return 'Распознан';
+        if (state === 'warning') return 'Предупреждение';
+        if (state === 'error') return 'Не распознан';
+        return 'Ожидание';
+      }
+
+      function stateToKind(state) {
+        if (state === 'ok') return 'ok';
+        if (state === 'warning') return 'warning';
+        if (state === 'error') return 'error';
+        return 'info';
+      }
+
+      function resultMessage(payload) {
+        if (!payload || isEmptyPrediction(payload)) {
+          return 'Ждем новое распознавание';
+        }
+        if (payload.status === 'ok') {
+          return 'Проверь результат';
+        }
+        if (payload.status === 'warning') {
+          return 'Нужно вмешательство';
+        }
+        return 'Выбери корректный сорт';
+      }
+
+      function setStatus(message, kind) {
+        statusEl.textContent = message;
+        statusEl.style.color = kind === 'error'
+          ? 'var(--danger)'
+          : kind === 'ok'
+            ? 'var(--success)'
+            : kind === 'warning'
+              ? 'var(--warning)'
+              : 'var(--muted)';
+      }
+
+      function labelFromMatch(match) {
+        if (!match) return '';
+        if (match.product_type && match.product_sort) return `${match.product_type}_${match.product_sort}`;
+        return match.product_id || '';
+      }
+
+      function imagePathFromMatch(match) {
+        if (!match || !match.metadata) return null;
+        return match.metadata.path || match.metadata.source_path || match.metadata.filename || null;
+      }
+
+      function formatWeightKg(value) {
+        return typeof value === 'number'
+          ? `${(value / 1000).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} кг`
+          : 'нет';
+      }
+
+      function formatPrice(value) {
+        return typeof value === 'number'
+          ? `${value.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽/кг`
+          : 'цены нет';
+      }
+
+      function formatTotal(value) {
+        return typeof value === 'number'
+          ? `${value.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`
+          : 'нет';
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#039;',
+        }[char]));
+      }
+    </script>
+  </body>
+</html>
