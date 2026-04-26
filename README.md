@@ -1,3 +1,8 @@
+
+
+<img width="2482" height="813" alt="logo" src="https://github.com/user-attachments/assets/c39b7221-1866-403e-ab3e-4c362d87d1b7" />
+
+
 # Smart Scale
 
 Сервис распознавания фруктов и овощей по изображению и весу.
